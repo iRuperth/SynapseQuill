@@ -26,6 +26,7 @@ chroma_*/
 node_modules/
 frontend/dist/
 frontend/node_modules/
+frontend/tsconfig.tsbuildinfo
 
 # --- OS / editor ---
 .DS_Store
