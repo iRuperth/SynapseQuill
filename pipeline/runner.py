@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from core.brand_config import BrandProfile
 
-from .match_monitor import Goal, Match, MatchMonitor
+from .match_monitor import Match, MatchMonitor
 from .narrator import narrate, youtube_metadata
 
 # Optional later-phase modules are imported lazily inside run_match so Phase 1
@@ -35,7 +35,8 @@ def run_match(profile_id: str, match: Match, *,
               on_step: StepCb = _noop_step,
               check_cancel: CancelCb = _noop_cancel,
               do_video: bool = True,
-              do_upload: bool = False) -> dict:
+              do_upload: bool = False,
+              do_social: bool = False) -> dict:
     """Run the full generation for one finished match. Returns a result dict."""
     cfg = BrandProfile(profile_id)
     result: dict = {"fixture_id": match.fixture_id, "scoreline": match.scoreline}
@@ -71,6 +72,12 @@ def run_match(profile_id: str, match: Match, *,
             result["video"] = str(video_path)
         except ImportError:
             on_step("video", "Video modules not available yet (Phase 2) — skipping")
+
+    # --- 3b. Social/blog text (multi-platform) -----------------------
+    if do_social:
+        on_step("social", "Generating blog/X/Instagram/LinkedIn text")
+        from .content_generator import generate_all
+        result["social"] = generate_all(cfg, match, provider=cfg.LLM_PROVIDER)
 
     # --- 4. Upload to YouTube (Phase 2) ------------------------------
     if do_upload and video_path:

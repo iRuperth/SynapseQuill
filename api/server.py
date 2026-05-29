@@ -62,6 +62,7 @@ class GenerateRequest(BaseModel):
     fixture_id: int
     do_video: bool = True
     do_upload: bool = False
+    do_social: bool = False
 
 
 class ProfileUpdate(BaseModel):
@@ -181,7 +182,8 @@ def _run_generation(profile_id: str, req: GenerateRequest):
         match = monitor.fixture(req.fixture_id)
         result = run_match(profile_id, match, on_step=on_step,
                           check_cancel=check_cancel,
-                          do_video=req.do_video, do_upload=req.do_upload)
+                          do_video=req.do_video, do_upload=req.do_upload,
+                          do_social=req.do_social)
         with _lock:
             _running[profile_id].update(state="done", result=result)
     except Exception as e:  # noqa: BLE001
