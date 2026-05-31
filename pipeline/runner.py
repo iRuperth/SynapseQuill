@@ -49,6 +49,21 @@ def run_match(profile_id: str, match: Match, *,
     if check_cancel():
         return {**result, "status": "cancelled"}
 
+    # --- 1b. Guardrail: verify narration against the real match data --
+    on_step("guardrail", "Verifying narration is grounded in match facts")
+    from agents.guardrail import verify
+    verdict = verify(match, narration, cfg.LANGUAGE, judge_provider=cfg.LLM_PROVIDER)
+    result["guardrail"] = verdict
+    if not verdict["passed"]:
+        # Retry once with a stricter instruction before giving up.
+        on_step("guardrail", "Narration failed checks — regenerating once")
+        narration = narrate(match, language=cfg.LANGUAGE,
+                            system_preamble=cfg.system_preamble + "\nBe strictly factual.",
+                            provider=cfg.LLM_PROVIDER)
+        result["narration"] = narration
+        result["guardrail"] = verify(match, narration, cfg.LANGUAGE,
+                                     judge_provider=cfg.LLM_PROVIDER)
+
     # --- 2. YouTube metadata -----------------------------------------
     on_step("metadata", "Generating YouTube metadata")
     meta = youtube_metadata(match, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
