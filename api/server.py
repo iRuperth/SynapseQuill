@@ -145,7 +145,15 @@ def get_matches(profile_id: str, day: str | None = None):
     monitor = MatchMonitor(cfg.LEAGUE_ID, cfg.SEASON,
                           api_key=cfg.get_secret("APIFOOTBALL_KEY"))
     try:
-        matches = monitor.fixtures_on(day)
+        # An explicit ?day= always wins. Otherwise MATCH_MODE decides:
+        #   today  -> fixtures of the current date (live competition)
+        #   latest -> most recent finished matches (past seasons / demos)
+        if day:
+            matches = monitor.fixtures_on(day)
+        elif cfg.MATCH_MODE == "today":
+            matches = monitor.fixtures_on()
+        else:
+            matches = monitor.latest_finished()
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return [
