@@ -20,7 +20,9 @@ from datetime import date
 import requests
 
 _BASE = "https://v3.football.api-sports.io"
-_FINISHED = {"FT", "AET", "PEN"}
+# Finished-match statuses across providers: API-Football (FT/AET/PEN) and
+# TheSportsDB (Match Finished / Finished).
+_FINISHED = {"FT", "AET", "PEN", "Match Finished", "Finished"}
 
 
 @dataclass
