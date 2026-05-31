@@ -2,10 +2,6 @@
   "name": "My Football Channel",
   "team": "",
   "language": "es",
-  "competition": {
-    "league_id": 1,
-    "season": 2026
-  },
   "llm_provider": "groq",
   "voice": {
     "provider": "edge",
@@ -13,7 +9,11 @@
     "rate": "+8%"
   },
   "media": {
-    "sources": ["stock", "graphics", "flux"],
+    "sources": [
+      "stock",
+      "graphics",
+      "flux"
+    ],
     "image_provider": "pollinations"
   },
   "style": {

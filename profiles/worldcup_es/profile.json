@@ -1,11 +1,7 @@
 {
-  "name": "Mundial 2026 — Resúmenes",
+  "name": "Fútbol ES — Resúmenes",
   "team": "",
   "language": "es",
-  "competition": {
-    "league_id": 1,
-    "season": 2026
-  },
   "llm_provider": "groq",
   "voice": {
     "provider": "edge",
