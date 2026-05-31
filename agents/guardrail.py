@@ -26,11 +26,14 @@ def facts_check(match: Match, text: str) -> dict:
     issues = []
 
     # The exact final score should appear (e.g. "5-2", "5 a 2", "5:2", "5 - 2").
+    # Accept BOTH orderings: natural narration often states the score from the
+    # winner's side ("Barcelona ganó 2 a 1") regardless of home/away order.
     h, a = match.home_goals, match.away_goals
     if h is not None and a is not None:
+        sep = r"\s*(?:[-:x]|\sa\s|\sto\s)\s*"   # "-", ":", "x", " a ", " to "
         patterns = [
-            rf"\b{h}\s*[-:x]\s*{a}\b",
-            rf"\b{h}\b.{{0,8}}\b{a}\b",     # "5 ... 2" loose, both numbers near
+            rf"\b{h}{sep}{a}\b",
+            rf"\b{a}{sep}{h}\b",                # reversed (winner-first phrasing)
         ]
         if not any(re.search(p, text) for p in patterns):
             issues.append(f"final score {h}-{a} not clearly stated")
