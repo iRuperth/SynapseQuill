@@ -73,8 +73,9 @@ def youtube_metadata(match: Match, *, language: str = "es", provider: str | None
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
         provider=provider, max_tokens=500, label="YT-Meta",
     )
-    from json_repair import repair_json
     import json
+
+    from json_repair import repair_json
     try:
         data = json.loads(repair_json(raw))
     except Exception:

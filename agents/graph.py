@@ -17,7 +17,6 @@ of the app imports fine without them.
 """
 
 from core.llm import get_llm
-
 from pipeline.tools.finance import as_langchain_tool
 
 

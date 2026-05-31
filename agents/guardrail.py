@@ -17,7 +17,6 @@ import re
 from json_repair import repair_json
 
 from core.llm import call_llm
-
 from pipeline.match_monitor import Match
 
 
@@ -36,25 +35,11 @@ def facts_check(match: Match, text: str) -> dict:
         if not any(re.search(p, text) for p in patterns):
             issues.append(f"final score {h}-{a} not clearly stated")
 
-    # No invented scorers: every capitalised multi-letter token that looks like a
-    # surname should be among the real scorers or team names (best-effort).
-    known = {g.player.lower() for g in match.goals}
-    known |= {w.lower() for g in match.goals for w in g.player.split()}
-    known |= {match.home.lower(), match.away.lower()}
-    known |= {w.lower() for team in (match.home, match.away) for w in team.split()}
-
-    # We only flag clearly name-like tokens to avoid false positives.
-    invented = []
-    for token in re.findall(r"\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{3,}\b", text):
-        low = token.lower()
-        if low in known:
-            continue
-        # ignore common words by length heuristic is unreliable; skip unless it
-        # appears right after a goal-ish context. Keep this advisory only.
-    # (kept intentionally conservative — scorer invention is rare once the
-    #  prompt is constrained; the LLM judge below is the stronger net.)
-
-    return {"ok": not issues, "issues": issues, "invented_candidates": invented}
+    # Scorer-invention detection is left to the stronger LLM-judge layer below:
+    # a regex over capitalised tokens produces too many false positives in free
+    # prose to be a reliable hard gate. The deterministic layer focuses on the
+    # one thing it can check exactly — the final score.
+    return {"ok": not issues, "issues": issues}
 
 
 # ── Layer 2: LLM-as-judge ────────────────────────────────────────────
