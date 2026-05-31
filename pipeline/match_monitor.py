@@ -79,12 +79,40 @@ class MatchMonitor:
 
     # ------------------------------------------------------------------
     def fixtures_on(self, day: str | None = None) -> list[Match]:
-        """Return all World Cup matches on `day` (YYYY-MM-DD, default today)."""
+        """Return all matches on `day` (YYYY-MM-DD, default today)."""
         day = day or date.today().isoformat()
         raw = self._get("/fixtures", {
             "league": self.league_id, "season": self.season, "date": day,
         })
         return [self._parse_fixture(f) for f in raw]
+
+    def fixtures_between(self, frm: str, to: str) -> list[Match]:
+        """Return all matches in a date range (YYYY-MM-DD). Useful for historical
+        seasons where 'today' has no games (e.g. demoing a past La Liga round)."""
+        raw = self._get("/fixtures", {
+            "league": self.league_id, "season": self.season, "from": frm, "to": to,
+        })
+        return [self._parse_fixture(f) for f in raw]
+
+    def fixtures_round(self, round_name: str) -> list[Match]:
+        """Return all matches of a given round, e.g. 'Regular Season - 38'."""
+        raw = self._get("/fixtures", {
+            "league": self.league_id, "season": self.season, "round": round_name,
+        })
+        return [self._parse_fixture(f) for f in raw]
+
+    def latest_finished(self, limit: int = 10) -> list[Match]:
+        """Return the most recent finished matches of the configured competition.
+
+        Fetches the whole season's fixtures in one call (so it works for any
+        historical season — La Liga 2023, World Cup 2022 — regardless of how long
+        ago it ended) and returns the last finished ones, most recent first.
+        """
+        raw = self._get("/fixtures", {"league": self.league_id, "season": self.season})
+        matches = [self._parse_fixture(f) for f in raw]
+        finished = [m for m in matches if m.is_finished]
+        finished.sort(key=lambda m: m.fixture_id, reverse=True)
+        return finished[:limit]
 
     def fixture(self, fixture_id: int) -> Match:
         """Return a single fixture with its goals populated."""
