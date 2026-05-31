@@ -1,0 +1,1 @@
+"""SynapseQuill FastAPI backend."""
