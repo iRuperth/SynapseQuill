@@ -90,9 +90,15 @@ class BrandProfile:
         self.LANGUAGE = j.get("language", self._env_get("LANGUAGE", "es"))
 
         # --- Football competition ---
+        # The .env wins so the competition can be switched globally without
+        # editing each profile.json. A profile may still pin its own values by
+        # setting competition.league_id / competition.season explicitly.
         comp = j.get("competition", {})
-        self.LEAGUE_ID = int(comp.get("league_id", self._env_get("APIFOOTBALL_LEAGUE", 1)))
-        self.SEASON = int(comp.get("season", self._env_get("APIFOOTBALL_SEASON", 2026)))
+        self.LEAGUE_ID = int(comp.get("league_id") or self._env_get("APIFOOTBALL_LEAGUE", 140))
+        self.SEASON = int(comp.get("season") or self._env_get("APIFOOTBALL_SEASON", 2023))
+        # today -> current-date fixtures (live competition);
+        # latest -> most recent finished matches (past seasons / demos).
+        self.MATCH_MODE = (comp.get("mode") or self._env_get("MATCH_MODE", "latest")).lower()
 
         # --- LLM ---
         self.LLM_PROVIDER = j.get("llm_provider", self._env_get("LLM_PROVIDER", "groq"))
