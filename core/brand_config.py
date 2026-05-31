@@ -99,6 +99,10 @@ class BrandProfile:
         # today -> current-date fixtures (live competition);
         # latest -> most recent finished matches (past seasons / demos).
         self.MATCH_MODE = (comp.get("mode") or self._env_get("MATCH_MODE", "latest")).lower()
+        # Data provider: apifootball (La Liga etc, full scorers) | thesportsdb
+        # (World Cup 2026, free, final scores). Switchable from .env.
+        self.DATA_PROVIDER = (comp.get("provider")
+                              or self._env_get("DATA_PROVIDER", "apifootball")).lower()
 
         # --- LLM ---
         self.LLM_PROVIDER = j.get("llm_provider", self._env_get("LLM_PROVIDER", "groq"))

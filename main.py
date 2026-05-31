@@ -25,14 +25,15 @@ load_dotenv()
 
 from core.brand_config import BrandProfile, list_profiles  # noqa: E402
 from core.tracing import setup_tracing  # noqa: E402
-from pipeline.match_monitor import MatchMonitor  # noqa: E402
+from pipeline.data_sources import get_data_source  # noqa: E402
 from pipeline.runner import run_fixture_id, run_match  # noqa: E402
 
 
 def cmd_fixtures(cfg: BrandProfile):
-    monitor = MatchMonitor(cfg.LEAGUE_ID, cfg.SEASON, api_key=cfg.get_secret("APIFOOTBALL_KEY"))
-    for m in monitor.fixtures_on():
-        print(f"  [{m.status:3}] {m.fixture_id}  {m.scoreline}")
+    source = get_data_source(cfg)
+    matches = source.fixtures_on() if cfg.MATCH_MODE == "today" else source.latest_finished()
+    for m in matches:
+        print(f"  [{m.status:>14}] {m.fixture_id}  {m.scoreline}")
 
 
 def cmd_match(cfg: BrandProfile, fixture_id: int, upload: bool, social: bool):
@@ -51,13 +52,14 @@ def cmd_report(cfg: BrandProfile):
 
 
 def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
-    """Poll API-Football and generate a video as each match finishes."""
-    monitor = MatchMonitor(cfg.LEAGUE_ID, cfg.SEASON, api_key=cfg.get_secret("APIFOOTBALL_KEY"))
-    print(f"[scheduler] watching World Cup fixtures every {interval}s "
+    """Poll the data source and generate a video as each match finishes."""
+    source = get_data_source(cfg)
+    processed: set = set()
+    print(f"[scheduler] watching {source.name} fixtures every {interval}s "
           f"(profile '{cfg.id}'). Ctrl+C to stop.")
     while True:
         try:
-            for match in monitor.poll_finished():
+            for match in source.poll_finished(processed):
                 print(f"[scheduler] finished: {match.scoreline} — generating...")
                 run_match(cfg.id, match, do_video=True, do_upload=upload)
         except Exception as e:  # noqa: BLE001

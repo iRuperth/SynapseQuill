@@ -46,7 +46,7 @@ from core.tracing import setup_tracing  # noqa: E402
 setup_tracing()
 
 from core.brand_config import PROFILES_DIR, BrandProfile, list_profiles  # noqa: E402
-from pipeline.match_monitor import MatchMonitor  # noqa: E402
+from pipeline.data_sources import get_data_source  # noqa: E402
 from pipeline.runner import run_match  # noqa: E402
 
 app = FastAPI(title="SynapseQuill API", version="0.1.0")
@@ -142,18 +142,17 @@ def update_profile(profile_id: str, body: ProfileUpdate):
 @app.get("/api/profiles/{profile_id}/matches")
 def get_matches(profile_id: str, day: str | None = None):
     cfg = _profile_or_404(profile_id)
-    monitor = MatchMonitor(cfg.LEAGUE_ID, cfg.SEASON,
-                          api_key=cfg.get_secret("APIFOOTBALL_KEY"))
+    source = get_data_source(cfg)
     try:
         # An explicit ?day= always wins. Otherwise MATCH_MODE decides:
         #   today  -> fixtures of the current date (live competition)
         #   latest -> most recent finished matches (past seasons / demos)
         if day:
-            matches = monitor.fixtures_on(day)
+            matches = source.fixtures_on(day)
         elif cfg.MATCH_MODE == "today":
-            matches = monitor.fixtures_on()
+            matches = source.fixtures_on()
         else:
-            matches = monitor.latest_finished()
+            matches = source.latest_finished()
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return [
@@ -192,9 +191,8 @@ def _run_generation(profile_id: str, req: GenerateRequest):
 
     try:
         cfg = BrandProfile(profile_id)
-        monitor = MatchMonitor(cfg.LEAGUE_ID, cfg.SEASON,
-                              api_key=cfg.get_secret("APIFOOTBALL_KEY"))
-        match = monitor.fixture(req.fixture_id)
+        source = get_data_source(cfg)
+        match = source.fixture(req.fixture_id)
         result = run_match(profile_id, match, on_step=on_step,
                           check_cancel=check_cancel,
                           do_video=req.do_video, do_upload=req.do_upload,

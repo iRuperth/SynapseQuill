@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from core.brand_config import BrandProfile
 
-from .match_monitor import Match, MatchMonitor
+from .match_monitor import Match
 from .narrator import narrate, youtube_metadata
 
 # Optional later-phase modules are imported lazily inside run_match so Phase 1
@@ -110,9 +110,9 @@ def run_match(profile_id: str, match: Match, *,
     return result
 
 
-def run_fixture_id(profile_id: str, fixture_id: int, **kwargs) -> dict:
-    """Convenience: fetch a fixture by id from API-Football and run it."""
+def run_fixture_id(profile_id: str, fixture_id, **kwargs) -> dict:
+    """Convenience: fetch a fixture by id from the configured source and run it."""
+    from .data_sources import get_data_source
     cfg = BrandProfile(profile_id)
-    monitor = MatchMonitor(cfg.LEAGUE_ID, cfg.SEASON, api_key=cfg.get_secret("APIFOOTBALL_KEY"))
-    match = monitor.fixture(fixture_id)
+    match = get_data_source(cfg).fixture(fixture_id)
     return run_match(profile_id, match, **kwargs)
