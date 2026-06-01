@@ -196,12 +196,66 @@ def get_video(profile_id: str, fixture_id: str):
     return FileResponse(vid, media_type="video/mp4")
 
 
+class PublishRequest(BaseModel):
+    fixture_id: int
+    privacy: str = "private"        # private | unlisted | public
+
+
+@app.post("/api/profiles/{profile_id}/publish")
+def publish_video(profile_id: str, body: PublishRequest):
+    """Upload an already-generated video to YouTube with the chosen privacy.
+
+    Returns the watch URL on success. Reports a clear error if OAuth is not
+    configured for the profile.
+    """
+    cfg = _profile_or_404(profile_id)
+    vid = cfg.VIDEO_DIR / f"match_{body.fixture_id}.mp4"
+    if not vid.exists():
+        raise HTTPException(status_code=404, detail="Generate the video first")
+
+    record_path = cfg.CONTENT_DIR / f"match_{body.fixture_id}.json"
+    record = {}
+    if record_path.exists():
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    meta = record.get("metadata") or {"title": record.get("scoreline", "Match"),
+                                       "description": "", "tags": []}
+
+    # Practice mode forces private regardless of the requested privacy.
+    privacy = "private" if cfg.PRACTICE_MODE else body.privacy
+    try:
+        from pipeline.publishers import upload_youtube
+        cfg.YOUTUBE_PRIVACY = privacy
+        url = upload_youtube(cfg, vid, meta)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"YouTube upload failed: {e}") from e
+
+    # Persist the resulting URL back into the content record.
+    record["youtube_url"] = url
+    record["youtube_privacy"] = privacy
+    record_path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+    return {"ok": True, "youtube_url": url, "privacy": privacy}
+
+
+# Progress percentage per pipeline step, so the frontend can show a bar.
+_STEP_PROGRESS = {
+    "start": 2, "enrich": 8, "narrate": 22, "guardrail": 38,
+    "metadata": 48, "media": 62, "voice": 74, "video": 88,
+    "social": 93, "upload": 97, "done": 100,
+}
+
+
 # ── Generation (background) ──────────────────────────────────────────
 def _run_generation(profile_id: str, req: GenerateRequest):
     def on_step(step: str, msg: str):
         with _lock:
             if profile_id in _running:
-                _running[profile_id].update(step=step, message=msg)
+                _running[profile_id].update(
+                    step=step, message=msg,
+                    progress=_STEP_PROGRESS.get(step,
+                             _running[profile_id].get("progress", 0)),
+                )
 
     def check_cancel() -> bool:
         return _cancel_flags.get(profile_id, False)
