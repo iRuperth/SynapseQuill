@@ -62,6 +62,7 @@ export interface GenerationStatus {
   state: 'idle' | 'running' | 'done' | 'error'
   step?: string
   message?: string
+  progress?: number
   fixture_id?: number
   result?: ContentRecord
 }

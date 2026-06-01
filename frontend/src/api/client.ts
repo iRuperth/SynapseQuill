@@ -39,3 +39,8 @@ export const getStatus = (id: string) =>
 
 export const cancelGeneration = (id: string) =>
   http.post(`/profiles/${id}/cancel`).then((r) => r.data)
+
+export const publishVideo = (id: string, fixtureId: number, privacy: string) =>
+  http.post<{ ok: boolean; youtube_url: string; privacy: string }>(
+    `/profiles/${id}/publish`, { fixture_id: fixtureId, privacy },
+  ).then((r) => r.data)

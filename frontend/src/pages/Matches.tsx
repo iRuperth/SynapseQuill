@@ -70,15 +70,29 @@ export default function Matches() {
 
       {busy && (
         <div style={statusBox}>
-          <strong>Generando…</strong> {status.step} — {status.message}
-          <button onClick={() => active && cancelGeneration(active)} style={{ ...btnStyle, marginLeft: 12 }}>
-            Cancelar
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span><strong>Generando…</strong> {status.message}</span>
+            <button onClick={() => active && cancelGeneration(active)}
+              style={{ ...btnStyle, background: 'transparent', border: '1px solid var(--border)', padding: '4px 10px' }}>
+              Cancelar
+            </button>
+          </div>
+          {/* Progress bar */}
+          <div style={{ height: 10, borderRadius: 999, background: 'var(--bg)', overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', width: `${status.progress ?? 0}%`,
+              background: 'linear-gradient(90deg, var(--accent), var(--accent-2))',
+              transition: 'width .4s ease',
+            }} />
+          </div>
+          <div style={{ textAlign: 'right', fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+            {status.progress ?? 0}%
+          </div>
         </div>
       )}
       {status.state === 'done' && (
         <div style={{ ...statusBox, borderColor: 'var(--accent)' }}>
-          ✅ Listo: {status.result?.scoreline}. Mira la Biblioteca.
+          ✅ Listo: {status.result?.scoreline}. Mira la <strong>Biblioteca</strong> para verlo y publicarlo.
         </div>
       )}
 
