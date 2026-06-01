@@ -1,14 +1,16 @@
 """
 image_generator.py — switchable AI image provider (the "flux" media source).
 
-IMAGE_PROVIDER (default "pollinations"):
-    pollinations    FLUX via Pollinations.ai — FREE, no API key, always online
-    cloudflare      Cloudflare Workers AI (FLUX.2 klein) — free 10k neurons/day
+IMAGE_PROVIDER:
+    pollinations    FLUX via Pollinations.ai — note: the anonymous free tier now
+                    returns 402 (Payment Required); needs a token to work.
+    cloudflare      Cloudflare Workers AI (FLUX.1 schnell) — free 10k neurons/day
     hf_inference    HuggingFace Inference (FLUX.1-schnell)
     local_diffusers Z-Image-Turbo / FLUX.1-schnell on a local GPU
 
-All providers expose the same `generate_image(prompt) -> bytes` contract, so
-switching is a config change with no code change (mirrors Synapse Core).
+The FLUX ambience is OPTIONAL: the reel's main content is the animated graphics
+(free, local). Enable it by adding 'flux' to MEDIA_SOURCES with a working
+provider. All providers share the same generate_image(prompt) -> bytes contract.
 """
 
 import os
