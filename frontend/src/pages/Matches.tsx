@@ -5,7 +5,9 @@ import type { GenerationStatus, Match } from '../types'
 
 export default function Matches() {
   const { active } = useProfile()
-  const [day, setDay] = useState<string>(new Date().toISOString().slice(0, 10))
+  // Empty day = let the backend show the latest finished matches of the
+  // configured competition (so La Liga 2023 / past seasons show up too).
+  const [day, setDay] = useState<string>('')
   const [matches, setMatches] = useState<Match[]>([])
   const [error, setError] = useState<string>('')
   const [loading, setLoading] = useState(false)
@@ -16,7 +18,7 @@ export default function Matches() {
     if (!active) return
     setLoading(true); setError('')
     try {
-      setMatches(await getMatches(active, day))
+      setMatches(await getMatches(active, day || undefined))
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? 'No se pudieron cargar los partidos. ¿Falta APIFOOTBALL_KEY?')
       setMatches([])
@@ -50,14 +52,16 @@ export default function Matches() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Partidos · Mundial 2026</h1>
+      <h1 style={{ marginTop: 0 }}>Partidos</h1>
       <p style={{ color: 'var(--text-muted)' }}>
         Elige un partido finalizado y genera su resumen en vídeo (narración + imágenes + subtítulos).
+        Por defecto se muestran los últimos partidos; puedes filtrar por fecha.
       </p>
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', margin: '16px 0' }}>
         <input type="date" value={day} onChange={(e) => setDay(e.target.value)}
-          style={inputStyle} />
+          style={inputStyle} placeholder="Filtrar por fecha (opcional)" />
+        {day && <button onClick={() => setDay('')} style={{ ...btnStyle, background: 'var(--bg-elevated)' }}>Ver últimos</button>}
         <button onClick={load} style={btnStyle}>Actualizar</button>
       </div>
 
