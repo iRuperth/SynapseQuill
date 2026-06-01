@@ -41,6 +41,17 @@ def run_match(profile_id: str, match: Match, *,
     cfg = BrandProfile(profile_id)
     result: dict = {"fixture_id": match.fixture_id, "scoreline": match.scoreline}
 
+    # --- 0. Enrich scorers (optional) --------------------------------
+    # If the data source gave no goals (e.g. TheSportsDB free for the World Cup),
+    # pull scorers + minutes from ESPN so the narration can name them.
+    import os
+    if not match.goals and os.getenv("ESPN_ENRICH", "true").lower() == "true":
+        on_step("enrich", "Fetching scorers from ESPN")
+        from .data_sources.espn_enrich import enrich
+        match = enrich(cfg, match)
+        if match.goals:
+            on_step("enrich", f"Added {len(match.goals)} scorer(s) from ESPN")
+
     # --- 1. Narration -------------------------------------------------
     on_step("narrate", f"Writing narration for {match.scoreline}")
     narration = narrate(match, language=cfg.LANGUAGE,
