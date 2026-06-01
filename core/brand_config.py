@@ -90,19 +90,31 @@ class BrandProfile:
         self.LANGUAGE = j.get("language", self._env_get("LANGUAGE", "es"))
 
         # --- Football competition ---
-        # The .env wins so the competition can be switched globally without
-        # editing each profile.json. A profile may still pin its own values by
-        # setting competition.league_id / competition.season explicitly.
+        # A named preset (set from the frontend) is the friendly way to switch
+        # between "La Liga" and "World Cup". If the profile names a competition
+        # preset, it wins; otherwise fall back to the raw .env values.
+        from core.competitions import DEFAULT as _DEFAULT_COMP
+        from core.competitions import get as _comp_get
         comp = j.get("competition", {})
-        self.LEAGUE_ID = int(comp.get("league_id") or self._env_get("APIFOOTBALL_LEAGUE", 140))
-        self.SEASON = int(comp.get("season") or self._env_get("APIFOOTBALL_SEASON", 2023))
-        # today -> current-date fixtures (live competition);
-        # latest -> most recent finished matches (past seasons / demos).
-        self.MATCH_MODE = (comp.get("mode") or self._env_get("MATCH_MODE", "latest")).lower()
-        # Data provider: apifootball (La Liga etc, full scorers) | thesportsdb
-        # (World Cup 2026, free, final scores). Switchable from .env.
-        self.DATA_PROVIDER = (comp.get("provider")
+        self.COMPETITION = comp.get("preset") or self._env_get("COMPETITION", "")
+        preset = _comp_get(self.COMPETITION) if self.COMPETITION else {}
+
+        self.DATA_PROVIDER = (preset.get("provider")
+                              or comp.get("provider")
                               or self._env_get("DATA_PROVIDER", "apifootball")).lower()
+        self.LEAGUE_ID = int(preset.get("league_id")
+                             or comp.get("league_id")
+                             or self._env_get("APIFOOTBALL_LEAGUE", 140))
+        self.SEASON = int(preset.get("season")
+                          or comp.get("season")
+                          or self._env_get("APIFOOTBALL_SEASON", 2023))
+        self.MATCH_MODE = (preset.get("mode") or comp.get("mode")
+                           or self._env_get("MATCH_MODE", "latest")).lower()
+        # TheSportsDB league id (World Cup = 4429) may come from the preset.
+        self._tsdb_league = (preset.get("tsdb_league")
+                             or self._env_get("THESPORTSDB_LEAGUE", "4429"))
+        if not self.COMPETITION:
+            self.COMPETITION = _DEFAULT_COMP
 
         # --- LLM ---
         self.LLM_PROVIDER = j.get("llm_provider", self._env_get("LLM_PROVIDER", "groq"))
@@ -177,7 +189,13 @@ class BrandProfile:
             "name": self.NAME,
             "team": self.TEAM,
             "language": self.LANGUAGE,
-            "competition": {"league_id": self.LEAGUE_ID, "season": self.SEASON},
+            "competition": {
+                "preset": self.COMPETITION,
+                "provider": self.DATA_PROVIDER,
+                "league_id": self.LEAGUE_ID,
+                "season": self.SEASON,
+                "mode": self.MATCH_MODE,
+            },
             "llm_provider": self.LLM_PROVIDER,
             "voice": {"provider": self.TTS_PROVIDER, "voice": self.TTS_VOICE, "rate": self.TTS_RATE},
             "media": {"sources": self.MEDIA_SOURCES, "image_provider": self.IMAGE_PROVIDER},

@@ -28,7 +28,10 @@ class TheSportsDbSource(FootballDataSource):
     def __init__(self, cfg):
         self.cfg = cfg
         self.key = cfg.get_secret("THESPORTSDB_KEY") or os.getenv("THESPORTSDB_KEY", "123")
-        self.league = cfg.get_secret("THESPORTSDB_LEAGUE") or os.getenv("THESPORTSDB_LEAGUE", "4429")
+        # Prefer the league id resolved by the competition preset on the profile.
+        self.league = (getattr(cfg, "_tsdb_league", None)
+                       or cfg.get_secret("THESPORTSDB_LEAGUE")
+                       or os.getenv("THESPORTSDB_LEAGUE", "4429"))
         self.season = cfg.get_secret("THESPORTSDB_SEASON") or os.getenv("THESPORTSDB_SEASON", "2026")
         self.base = f"https://www.thesportsdb.com/api/v1/json/{self.key}"
 
