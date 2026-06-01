@@ -58,21 +58,30 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
         ImageClip,
         concatenate_videoclips,
     )
+    from moviepy.video.fx import CrossFadeIn, FadeIn, FadeOut
 
     audio = AudioFileClip(str(audio_path))
     total = float(audio.duration)
     per = total / max(len(images), 1)
+    fade = min(0.6, per / 3)          # smooth crossfade between slides
 
     slides = []
-    for img in images:
+    for i, img in enumerate(images):
+        # Full-frame static image (no zoom): fit to the canvas, centred.
         clip = (ImageClip(str(img))
-                .resized(height=H)
+                .resized(width=W)
                 .with_duration(per)
-                .resized(lambda t: 1 + 0.04 * t)      # gentle Ken-Burns zoom
                 .with_position("center"))
+        # Crossfade-in on every slide except the first; gentle fades at the ends.
+        if i == 0:
+            clip = clip.with_effects([FadeIn(0.4)])
+        else:
+            clip = clip.with_effects([CrossFadeIn(fade)])
         slides.append(clip)
 
-    base = concatenate_videoclips(slides, method="compose").with_duration(total)
+    base = (concatenate_videoclips(slides, method="compose", padding=-fade)
+            .with_duration(total)
+            .with_effects([FadeOut(0.5)]))
     layers = [base, *_subtitle_clips(subtitles, total)]
     video = CompositeVideoClip(layers, size=(W, H)).with_audio(audio)
 
