@@ -17,7 +17,8 @@ from core.brand_config import BrandProfile
 
 from .match_monitor import Match
 
-W, H = 1280, 720
+# Reels / Shorts format: vertical 9:16.
+W, H = 1080, 1920
 
 
 def _font_path() -> str | None:
@@ -41,17 +42,24 @@ def _subtitle_clips(subtitles: list[dict], total: float):
         if end <= start:
             continue
         txt = TextClip(
-            text=cue["text"], font=font, font_size=38, color="white",
-            stroke_color="black", stroke_width=2,
+            text=cue["text"], font=font, font_size=52, color="white",
+            stroke_color="black", stroke_width=3,
             method="caption", size=(int(W * 0.9), None),
-        ).with_start(start).with_duration(end - start).with_position(("center", H - 140))
+            bg_color=(0, 0, 0, 140),               # readable band behind text (RGBA)
+            text_align="center",
+        ).with_start(start).with_duration(end - start).with_position(("center", H - 520))
         clips.append(txt)
     return clips
 
 
 def assemble(cfg: BrandProfile, match: Match, images: list[Path],
              audio_path: Path, subtitles: list[dict], metadata: dict) -> Path:
-    """Render the .mp4 and return its path."""
+    """Render the .mp4 and return its path.
+
+    The base layer is animated broadcast-style motion graphics (scoreboard +
+    goal timeline). Any FLUX ambience images are shown briefly as an intro/cover
+    behind a fade. Narration audio and readable subtitles sit on top.
+    """
     from moviepy import (
         AudioFileClip,
         CompositeVideoClip,
@@ -60,26 +68,35 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
     )
     from moviepy.video.fx import CrossFadeIn, FadeIn, FadeOut
 
+    from .animated_graphics import build_animated_clips
+
     audio = AudioFileClip(str(audio_path))
     total = float(audio.duration)
-    per = total / max(len(images), 1)
-    fade = min(0.6, per / 3)          # smooth crossfade between slides
 
-    slides = []
-    for i, img in enumerate(images):
-        # Full-frame static image (no zoom): fit to the canvas, centred.
-        clip = (ImageClip(str(img))
-                .resized(width=W)
-                .with_duration(per)
-                .with_position("center"))
-        # Crossfade-in on every slide except the first; gentle fades at the ends.
-        if i == 0:
-            clip = clip.with_effects([FadeIn(0.4)])
-        else:
-            clip = clip.with_effects([CrossFadeIn(fade)])
-        slides.append(clip)
+    # Separate FLUX ambience images (filename contains "ambience") from data
+    # cards; the animated graphics replace the static data cards entirely.
+    ambience = [p for p in images if "ambience" in p.name]
 
-    base = (concatenate_videoclips(slides, method="compose", padding=-fade)
+    segments = []
+    # Optional short ambience intro (first ~22% of the video) if available.
+    intro_t = 0.0
+    if ambience:
+        intro_t = min(total * 0.22, 3.0)
+        cover = (ImageClip(str(ambience[0]))
+                 .resized(width=W)
+                 .with_duration(intro_t)
+                 .with_position("center")
+                 .with_effects([FadeIn(0.4)]))
+        segments.append(cover)
+
+    # Animated graphics fill the rest.
+    graph_total = max(total - intro_t, 0.1)
+    anim = build_animated_clips(cfg, match, graph_total)
+    fade = 0.5
+    for i, clip in enumerate(anim):
+        segments.append(clip.with_effects([CrossFadeIn(fade)]) if (i or intro_t) else clip)
+
+    base = (concatenate_videoclips(segments, method="compose", padding=-fade)
             .with_duration(total)
             .with_effects([FadeOut(0.5)]))
     layers = [base, *_subtitle_clips(subtitles, total)]
