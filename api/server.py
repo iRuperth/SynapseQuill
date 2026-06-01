@@ -97,6 +97,7 @@ def health():
 
 @app.get("/api/config/global")
 def global_config():
+    from core.competitions import options as competition_options
     return {
         "llm_providers": ["groq", "gemini", "cerebras", "ollama"],
         "image_providers": ["pollinations", "cloudflare", "hf_inference", "local_diffusers"],
@@ -104,6 +105,7 @@ def global_config():
         "tts_providers": ["edge", "gtts", "piper"],
         "languages": ["es", "en", "fr", "it"],
         "youtube_privacy": ["private", "unlisted", "public"],
+        "competitions": competition_options(),
     }
 
 
@@ -173,10 +175,25 @@ def get_content(profile_id: str):
     records = []
     for f in sorted(cfg.CONTENT_DIR.glob("match_*.json"), reverse=True):
         try:
-            records.append(json.loads(f.read_text(encoding="utf-8")))
+            rec = json.loads(f.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
+        # Expose a playable URL if the .mp4 exists, so the frontend can embed it.
+        vid = cfg.VIDEO_DIR / f"match_{rec.get('fixture_id')}.mp4"
+        if vid.exists():
+            rec["video_url"] = f"/api/profiles/{profile_id}/video/{rec['fixture_id']}"
+        records.append(rec)
     return records
+
+
+@app.get("/api/profiles/{profile_id}/video/{fixture_id}")
+def get_video(profile_id: str, fixture_id: str):
+    """Stream a generated .mp4 so the frontend can play it inline."""
+    cfg = _profile_or_404(profile_id)
+    vid = cfg.VIDEO_DIR / f"match_{fixture_id}.mp4"
+    if not vid.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    return FileResponse(vid, media_type="video/mp4")
 
 
 # ── Generation (background) ──────────────────────────────────────────
