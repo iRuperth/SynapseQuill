@@ -12,13 +12,25 @@ export interface Profile {
   name: string
   team: string
   language: string
-  competition: { league_id: number; season: number }
+  competition: {
+    preset: string
+    provider: string
+    league_id: number
+    season: number
+    mode: string
+  }
   llm_provider: string
   voice: { provider: string; voice: string; rate: string }
   media: { sources: string[]; image_provider: string }
   style: { visual_style: string }
   youtube: { practice_mode: boolean; privacy: string }
   has_system_preamble: boolean
+}
+
+export interface CompetitionOption {
+  key: string
+  label: string
+  scorers: string
 }
 
 export interface Match {
@@ -40,6 +52,7 @@ export interface ContentRecord {
   narration?: string
   metadata?: { title: string; description: string; tags: string[] }
   video?: string
+  video_url?: string
   youtube_url?: string
   generated_at?: string
   status?: string
@@ -60,4 +73,5 @@ export interface GlobalConfig {
   tts_providers: string[]
   languages: string[]
   youtube_privacy: string[]
+  competitions: CompetitionOption[]
 }

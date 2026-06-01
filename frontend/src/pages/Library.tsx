@@ -28,6 +28,13 @@ export default function Library() {
               <strong style={{ fontSize: 18 }}>{it.metadata?.title ?? it.scoreline}</strong>
               <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{it.generated_at}</span>
             </div>
+            {it.video_url && (
+              <video
+                src={it.video_url}
+                controls
+                style={{ width: '100%', borderRadius: 8, marginTop: 10, background: '#000' }}
+              />
+            )}
             {it.narration && (
               <p style={{ color: 'var(--text)', lineHeight: 1.5 }}>{it.narration}</p>
             )}

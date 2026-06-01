@@ -30,6 +30,20 @@ export default function Settings() {
       {saved && <span style={{ color: 'var(--accent)' }}>Guardado ✓</span>}
 
       <div style={{ display: 'grid', gap: 16, maxWidth: 460, marginTop: 16 }}>
+        <Field label="Competición (Liga España / Mundial)">
+          <select
+            value={profile.competition.preset}
+            onChange={(e) => patch({ competition: { preset: e.target.value } })}
+            style={input}
+          >
+            {cfg.competitions.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label} {c.scorers === 'full' ? '· goleadores ✓' : '· goleadores vía ESPN'}
+              </option>
+            ))}
+          </select>
+        </Field>
+
         <Field label="Idioma de narración">
           <Select value={profile.language} options={cfg.languages}
             onChange={(v) => patch({ language: v })} />
