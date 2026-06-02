@@ -2,20 +2,10 @@
   "name": "Fútbol ES — Resúmenes",
   "team": "",
   "language": "es",
-  "llm_provider": "groq",
   "voice": {
-    "provider": "edge",
-    "voice": "es-AR-TomasNeural",
-    "rate": "+8%"
+    "preset": "es_male"
   },
-  "media": {
-    "sources": [
-      "stock",
-      "graphics",
-      "flux"
-    ],
-    "image_provider": "pollinations"
-  },
+  "media": {},
   "style": {
     "visual_style": "cinematic sports broadcast, vibrant, dramatic lighting"
   },
@@ -23,5 +13,8 @@
     "description": "Energetic, passionate football broadcaster covering the FIFA World Cup 2026.",
     "tone": "exciting, emotional, vivid",
     "values": "accuracy of scores and scorers above all"
+  },
+  "competition": {
+    "preset": "laliga_2023"
   }
 }
