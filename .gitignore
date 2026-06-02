@@ -33,3 +33,4 @@ frontend/tsconfig.tsbuildinfo
 *.log
 .idea/
 .vscode/
+.cache/
