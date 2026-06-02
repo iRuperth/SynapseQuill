@@ -20,7 +20,7 @@ export interface Profile {
     mode: string
   }
   llm_provider: string
-  voice: { provider: string; voice: string; rate: string }
+  voice: { preset: string; provider: string; voice: string; rate: string }
   media: { sources: string[]; image_provider: string }
   style: { visual_style: string }
   youtube: { practice_mode: boolean; privacy: string }
@@ -31,6 +31,12 @@ export interface CompetitionOption {
   key: string
   label: string
   scorers: string
+}
+
+export interface VoiceOption {
+  key: string
+  label: string
+  language: string
 }
 
 export interface Match {
@@ -75,4 +81,5 @@ export interface GlobalConfig {
   languages: string[]
   youtube_privacy: string[]
   competitions: CompetitionOption[]
+  voices: VoiceOption[]
 }

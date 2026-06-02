@@ -59,10 +59,16 @@ export default function Settings() {
             onChange={(v) => patch({ media: { image_provider: v } })} />
         </Field>
 
-        <Field label="Voz TTS">
-          <input value={profile.voice.voice}
-            onChange={(e) => patch({ voice: { voice: e.target.value } })}
-            style={input} />
+        <Field label="Voz del narrador">
+          <select
+            value={profile.voice.preset}
+            onChange={(e) => patch({ voice: { preset: e.target.value } })}
+            style={input}
+          >
+            {cfg.voices.map((v) => (
+              <option key={v.key} value={v.key}>{v.label}</option>
+            ))}
+          </select>
         </Field>
       </div>
     </div>
