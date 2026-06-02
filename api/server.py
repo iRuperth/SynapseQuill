@@ -98,14 +98,16 @@ def health():
 @app.get("/api/config/global")
 def global_config():
     from core.competitions import options as competition_options
+    from core.voices import options as voice_options
     return {
         "llm_providers": ["groq", "gemini", "cerebras", "ollama"],
-        "image_providers": ["pollinations", "cloudflare", "hf_inference", "local_diffusers"],
+        "image_providers": ["together", "fal", "pollinations", "cloudflare", "hf_inference"],
         "media_sources": ["stock", "graphics", "flux"],
         "tts_providers": ["edge", "gtts", "piper"],
         "languages": ["es", "en", "fr", "it"],
         "youtube_privacy": ["private", "unlisted", "public"],
         "competitions": competition_options(),
+        "voices": voice_options(),
     }
 
 

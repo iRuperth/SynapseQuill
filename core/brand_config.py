@@ -120,10 +120,16 @@ class BrandProfile:
         self.LLM_PROVIDER = j.get("llm_provider", self._env_get("LLM_PROVIDER", "groq"))
 
         # --- Voice / TTS ---
+        # A named voice preset (man/woman x ES/EN) is the friendly choice; it
+        # resolves to an Edge-TTS voice id and rate. Explicit voice/rate still win.
+        from core.voices import DEFAULT as _DEFAULT_VOICE
+        from core.voices import get as _voice_get
         voice = j.get("voice", {})
+        self.VOICE_PRESET = voice.get("preset") or self._env_get("VOICE_PRESET", _DEFAULT_VOICE)
+        vp = _voice_get(self.VOICE_PRESET)
         self.TTS_PROVIDER = voice.get("provider", self._env_get("TTS_PROVIDER", "edge"))
-        self.TTS_VOICE = voice.get("voice", self._env_get("TTS_VOICE", "es-ES-AlvaroNeural"))
-        self.TTS_RATE = voice.get("rate", self._env_get("TTS_RATE", "+8%"))
+        self.TTS_VOICE = voice.get("voice") or vp["voice"]
+        self.TTS_RATE = voice.get("rate") or vp["rate"]
 
         # --- Visual media ---
         media = j.get("media", {})
@@ -197,7 +203,8 @@ class BrandProfile:
                 "mode": self.MATCH_MODE,
             },
             "llm_provider": self.LLM_PROVIDER,
-            "voice": {"provider": self.TTS_PROVIDER, "voice": self.TTS_VOICE, "rate": self.TTS_RATE},
+            "voice": {"preset": self.VOICE_PRESET, "provider": self.TTS_PROVIDER,
+                      "voice": self.TTS_VOICE, "rate": self.TTS_RATE},
             "media": {"sources": self.MEDIA_SOURCES, "image_provider": self.IMAGE_PROVIDER},
             "style": {"visual_style": self.VISUAL_STYLE},
             "youtube": {"practice_mode": self.PRACTICE_MODE, "privacy": self.YOUTUBE_PRIVACY},
