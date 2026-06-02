@@ -33,22 +33,32 @@ def _font_path() -> str | None:
 
 
 def _subtitle_clips(subtitles: list[dict], total: float):
+    """Karaoke-style captions: one YELLOW word at a time with a jump animation."""
     from moviepy import TextClip
 
+    from .voice_generator import word_cues
+
     font = _font_path()
+    base_y = H - 340             # bottom area, clear of the scoreboard/timeline
     clips = []
-    for cue in subtitles:
+    for cue in word_cues(subtitles):
         start, end = min(cue["start"], total), min(cue["end"], total)
         if end <= start:
             continue
+        dur = end - start
         txt = TextClip(
-            text=cue["text"], font=font, font_size=52, color="white",
-            stroke_color="black", stroke_width=3,
-            method="caption", size=(int(W * 0.9), None),
-            bg_color=(0, 0, 0, 140),               # readable band behind text (RGBA)
-            text_align="center",
-        ).with_start(start).with_duration(end - start).with_position(("center", H - 520))
-        clips.append(txt)
+            text=cue["text"].upper(), font=font, font_size=96,
+            color="yellow", stroke_color="black", stroke_width=6,
+            method="label", text_align="center",
+        ).with_start(start).with_duration(dur)
+
+        # Jump animation: the word pops up a few px then settles (ease-out).
+        def _pos(t, _y=base_y, _d=dur):
+            prog = min(t / max(_d * 0.4, 0.01), 1.0)
+            jump = int(40 * (1 - prog) ** 2)      # starts +40px up, settles
+            return ("center", _y - jump)
+
+        clips.append(txt.with_position(_pos))
     return clips
 
 
@@ -62,44 +72,45 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
     """
     from moviepy import (
         AudioFileClip,
+        ColorClip,
         CompositeVideoClip,
         ImageClip,
-        concatenate_videoclips,
     )
-    from moviepy.video.fx import CrossFadeIn, FadeIn, FadeOut
+    from moviepy.video.fx import CrossFadeIn
 
     from .animated_graphics import build_animated_clips
 
     audio = AudioFileClip(str(audio_path))
     total = float(audio.duration)
 
-    # Separate FLUX ambience images (filename contains "ambience") from data
-    # cards; the animated graphics replace the static data cards entirely.
+    # ── Background: crowd/stadium ambience fills the WHOLE video (no more empty
+    # black space). Darkened so the graphics and subtitles stay readable.
     ambience = [p for p in images if "ambience" in p.name]
-
-    segments = []
-    # Optional short ambience intro (first ~22% of the video) if available.
-    intro_t = 0.0
     if ambience:
-        intro_t = min(total * 0.22, 3.0)
-        cover = (ImageClip(str(ambience[0]))
-                 .resized(width=W)
-                 .with_duration(intro_t)
-                 .with_position("center")
-                 .with_effects([FadeIn(0.4)]))
-        segments.append(cover)
+        bg = (ImageClip(str(ambience[0]))
+              .resized((W, H))
+              .with_duration(total))
+        dim = (ColorClip(size=(W, H), color=(8, 12, 24))
+               .with_opacity(0.55)
+               .with_duration(total))
+        bg_layers = [bg, dim]
+    else:
+        bg_layers = [ColorClip(size=(W, H), color=(11, 16, 32)).with_duration(total)]
 
-    # Animated graphics fill the rest.
-    graph_total = max(total - intro_t, 0.1)
-    anim = build_animated_clips(cfg, match, graph_total)
+    # ── Animated graphics (transparent) layered over the crowd.
+    anim = build_animated_clips(cfg, match, total)
     fade = 0.5
+    graph = []
+    cursor = 0.0
+    seg_len = total / max(len(anim), 1)
     for i, clip in enumerate(anim):
-        segments.append(clip.with_effects([CrossFadeIn(fade)]) if (i or intro_t) else clip)
+        c = clip.with_start(cursor)
+        if i > 0:
+            c = c.with_effects([CrossFadeIn(fade)])
+        graph.append(c)
+        cursor += seg_len
 
-    base = (concatenate_videoclips(segments, method="compose", padding=-fade)
-            .with_duration(total)
-            .with_effects([FadeOut(0.5)]))
-    layers = [base, *_subtitle_clips(subtitles, total)]
+    layers = [*bg_layers, *graph, *_subtitle_clips(subtitles, total)]
     video = CompositeVideoClip(layers, size=(W, H)).with_audio(audio)
 
     out = cfg.VIDEO_DIR / f"match_{match.fixture_id}.mp4"
