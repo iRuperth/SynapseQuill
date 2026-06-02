@@ -34,6 +34,14 @@ class Goal:
 
 
 @dataclass
+class Card:
+    player: str
+    team: str
+    minute: str
+    color: str           # "Yellow" or "Red"
+
+
+@dataclass
 class Match:
     fixture_id: int
     status: str
@@ -44,7 +52,10 @@ class Match:
     home_logo: str = ""
     away_logo: str = ""
     venue: str = ""
+    competition: str = ""          # real league/cup name (not hardcoded)
+    date: str = ""                 # YYYY-MM-DD
     goals: list[Goal] = field(default_factory=list)
+    cards: list[Card] = field(default_factory=list)
 
     @property
     def is_finished(self) -> bool:
@@ -138,32 +149,43 @@ class MatchMonitor:
         return finished[:limit]
 
     def fixture(self, fixture_id: int) -> Match:
-        """Return a single fixture with its goals populated."""
+        """Return a single fixture with its goals and cards populated."""
         raw = self._get("/fixtures", {"id": fixture_id})
         if not raw:
             raise ValueError(f"Fixture {fixture_id} not found")
         match = self._parse_fixture(raw[0])
-        match.goals = self.goals_of(fixture_id)
+        match.goals, match.cards = self.events_of(fixture_id)
         return match
 
-    def goals_of(self, fixture_id: int) -> list[Goal]:
-        """Fetch the goal events (scorer + minute) of a fixture."""
+    @staticmethod
+    def _minute(ev: dict) -> str:
+        t = ev.get("time", {})
+        minute = str(t.get("elapsed", "?"))
+        if t.get("extra"):
+            minute = f"{minute}+{t['extra']}"
+        return minute
+
+    def events_of(self, fixture_id: int) -> tuple[list[Goal], list[Card]]:
+        """Fetch goals (scorer + minute) and cards (player + colour + minute)."""
         events = self._get("/fixtures/events", {"fixture": fixture_id})
-        goals = []
+        goals, cards = [], []
         for ev in events:
-            if ev.get("type") != "Goal":
-                continue
-            t = ev.get("time", {})
-            minute = str(t.get("elapsed", "?"))
-            if t.get("extra"):
-                minute = f"{minute}+{t['extra']}"
-            goals.append(Goal(
-                player=(ev.get("player") or {}).get("name", "Unknown"),
-                team=(ev.get("team") or {}).get("name", ""),
-                minute=minute,
-                kind=ev.get("detail", "Normal Goal"),
-            ))
-        return goals
+            etype = ev.get("type")
+            player = (ev.get("player") or {}).get("name", "Unknown")
+            team = (ev.get("team") or {}).get("name", "")
+            if etype == "Goal":
+                goals.append(Goal(player=player, team=team, minute=self._minute(ev),
+                                  kind=ev.get("detail", "Normal Goal")))
+            elif etype == "Card":
+                detail = ev.get("detail", "")
+                color = "Red" if "Red" in detail else "Yellow"
+                cards.append(Card(player=player, team=team,
+                                  minute=self._minute(ev), color=color))
+        return goals, cards
+
+    def goals_of(self, fixture_id: int) -> list[Goal]:
+        """Backwards-compatible helper returning only the goals."""
+        return self.events_of(fixture_id)[0]
 
     # ------------------------------------------------------------------
     def poll_finished(self, day: str | None = None) -> list[Match]:
@@ -190,6 +212,7 @@ class MatchMonitor:
         fx = f.get("fixture", {})
         teams = f.get("teams", {})
         goals = f.get("goals", {})
+        league = f.get("league", {})
         home, away = teams.get("home", {}), teams.get("away", {})
         return Match(
             fixture_id=fx.get("id"),
@@ -201,4 +224,6 @@ class MatchMonitor:
             home_logo=home.get("logo", ""),
             away_logo=away.get("logo", ""),
             venue=(fx.get("venue") or {}).get("name", "") or "",
+            competition=league.get("name", "") or "",
+            date=(fx.get("date", "") or "")[:10],
         )
