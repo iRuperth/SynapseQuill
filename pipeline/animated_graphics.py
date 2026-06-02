@@ -67,13 +67,13 @@ def _scoreboard_frame(match: Match, p: float):
 
     # Team names fade in after the score starts counting.
     if p > 0.2:
-        _center(d, match.home.upper(), 1080, _font(72), _TEXT)
-        _center(d, "vs", 1185, _font(40), _MUTED)
-        _center(d, match.away.upper(), 1255, _font(72), _TEXT)
+        _center(d, match.home.upper(), 1020, _font(72), _TEXT)
+        _center(d, "vs", 1125, _font(40), _MUTED)
+        _center(d, match.away.upper(), 1195, _font(72), _TEXT)
 
     # Accent underline grows.
     bar_w = int((W * 0.6) * _ease(min(p / 0.8, 1.0)))
-    d.rectangle([(W - bar_w) // 2, 1430, (W + bar_w) // 2, 1440], fill=_ACCENT2)
+    d.rectangle([(W - bar_w) // 2, 1330, (W + bar_w) // 2, 1340], fill=_ACCENT2)
     return img
 
 
@@ -82,9 +82,17 @@ def scoreboard_clip(match: Match, duration: float):
     from moviepy import VideoClip
 
     def make(t):
-        return np.array(_scoreboard_frame(match, min(t / duration, 1.0)))
+        return np.array(_scoreboard_frame(match, min(t / duration, 1.0)))[:, :, :3]
 
-    return VideoClip(make, duration=duration)
+    def mask(t):
+        # Alpha = where pixels differ from the flat background, so the graphics
+        # float over the crowd backdrop instead of a solid box.
+        frame = np.array(_scoreboard_frame(match, min(t / duration, 1.0)))[:, :, :3]
+        diff = np.abs(frame.astype(int) - np.array(_BG)).sum(axis=2)
+        return np.clip(diff / 60.0, 0, 1)
+
+    clip = VideoClip(make, duration=duration)
+    return clip.with_mask(VideoClip(mask, duration=duration, is_mask=True))
 
 
 # ── Goal timeline clip (each scorer slides in) ───────────────────────
@@ -122,9 +130,15 @@ def timeline_clip(match: Match, language: str, duration: float):
     from moviepy import VideoClip
 
     def make(t):
-        return np.array(_timeline_frame(match, language, min(t / duration, 1.0)))
+        return np.array(_timeline_frame(match, language, min(t / duration, 1.0)))[:, :, :3]
 
-    return VideoClip(make, duration=duration)
+    def mask(t):
+        frame = np.array(_timeline_frame(match, language, min(t / duration, 1.0)))[:, :, :3]
+        diff = np.abs(frame.astype(int) - np.array(_BG)).sum(axis=2)
+        return np.clip(diff / 60.0, 0, 1)
+
+    clip = VideoClip(make, duration=duration)
+    return clip.with_mask(VideoClip(mask, duration=duration, is_mask=True))
 
 
 def build_animated_clips(cfg: BrandProfile, match: Match, total: float) -> list:
