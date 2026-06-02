@@ -23,8 +23,9 @@ W, H = 1080, 1920
 
 def _flux_cover(cfg: BrandProfile, match: Match, out: Path, on_step) -> Path | None:
     prompt = (
-        f"{cfg.VISUAL_STYLE}, packed football stadium at night, dramatic crowd, "
-        "World Cup atmosphere, celebration, no text, no faces, vertical composition"
+        f"{cfg.VISUAL_STYLE}, huge crowd of football fans wearing team jerseys and "
+        "scarves cheering in a packed stadium at night, flares and confetti, vibrant "
+        "colours, energetic celebration, vertical composition, no readable text"
     )
     try:
         data = generate_image(prompt, provider=cfg.IMAGE_PROVIDER, width=W, height=H)
