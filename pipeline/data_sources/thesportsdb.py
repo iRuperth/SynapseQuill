@@ -37,11 +37,22 @@ class TheSportsDbSource(FootballDataSource):
 
     # ------------------------------------------------------------------
     def _get(self, path: str, params: dict) -> dict:
+        from . import cache
+        cache_key = ("thesportsdb", path, tuple(sorted(params.items())))
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         r = requests.get(f"{self.base}/{path}", params=params, timeout=30)
         if r.status_code == 429:
+            stale = cache.get_stale(cache_key)
+            if stale is not None:
+                return stale
             raise RuntimeError("TheSportsDB rate limit (HTTP 429). Wait a minute.")
         r.raise_for_status()
-        return r.json() or {}
+        data = r.json() or {}
+        cache.put(cache_key, data)
+        return data
 
     def _to_match(self, e: dict) -> Match:
         def _int(v):

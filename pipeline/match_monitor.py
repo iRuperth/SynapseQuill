@@ -71,13 +71,34 @@ class MatchMonitor:
         return {"x-apisports-key": self.api_key}
 
     def _get(self, path: str, params: dict) -> list:
-        resp = requests.get(f"{_BASE}{path}", headers=self._headers(),
-                            params=params, timeout=30)
+        from .data_sources import cache
+        cache_key = ("apifootball", path, tuple(sorted(params.items())))
+
+        # Serve fresh cache first to avoid spending the 100/day quota.
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            resp = requests.get(f"{_BASE}{path}", headers=self._headers(),
+                                params=params, timeout=30)
+        except requests.RequestException:
+            stale = cache.get_stale(cache_key)
+            if stale is not None:
+                return stale
+            raise
+
         if resp.status_code == 429:
+            # Quota exhausted: fall back to stale cache if we have any.
+            stale = cache.get_stale(cache_key)
+            if stale is not None:
+                return stale
             raise RuntimeError("API-Football daily quota exhausted (HTTP 429). "
                                "Resets at 00:00 UTC.")
         resp.raise_for_status()
-        return resp.json().get("response", [])
+        data = resp.json().get("response", [])
+        cache.put(cache_key, data)
+        return data
 
     # ------------------------------------------------------------------
     def fixtures_on(self, day: str | None = None) -> list[Match]:
