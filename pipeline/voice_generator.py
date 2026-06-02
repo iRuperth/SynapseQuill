@@ -71,6 +71,29 @@ def synthesize(cfg: BrandProfile, text: str) -> tuple[Path, list[dict]]:
     return audio_path, subtitles
 
 
+def word_cues(subtitles: list[dict]) -> list[dict]:
+    """Split sentence cues into per-word cues for karaoke-style captions.
+
+    Edge-TTS no longer emits WordBoundary, so we distribute each sentence's
+    duration across its words proportionally to word length (a good visual
+    approximation for one-word-at-a-time, jumping subtitles).
+    """
+    words = []
+    for cue in subtitles:
+        toks = cue["text"].split()
+        if not toks:
+            continue
+        span = max(cue["end"] - cue["start"], 0.01)
+        weights = [len(t) + 1 for t in toks]
+        wsum = sum(weights)
+        t = cue["start"]
+        for tok, w in zip(toks, weights, strict=True):
+            dur = span * (w / wsum)
+            words.append({"start": t, "end": t + dur, "text": tok})
+            t += dur
+    return words
+
+
 def _group_cues(word_cues: list[dict], words_per_line: int = 8) -> list[dict]:
     lines = []
     for i in range(0, len(word_cues), words_per_line):
