@@ -60,7 +60,10 @@ function Card({ item, profileId, onPublished }: {
 
       {item.video_url && (
         <video src={item.video_url} controls
-          style={{ width: '100%', borderRadius: 8, marginTop: 10, background: '#000' }} />
+          style={{
+            height: 380, width: 'auto', maxWidth: '100%',
+            display: 'block', borderRadius: 10, marginTop: 10, background: '#000',
+          }} />
       )}
 
       {item.narration && <p style={{ lineHeight: 1.5 }}>{item.narration}</p>}
