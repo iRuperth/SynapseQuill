@@ -19,8 +19,6 @@ from pipeline.match_monitor import Goal, Match
 
 from .base import FootballDataSource
 
-_FINISHED = {"Match Finished", "FT", "AET", "PEN", "Finished"}
-
 
 class TheSportsDbSource(FootballDataSource):
     name = "thesportsdb"
@@ -61,8 +59,13 @@ class TheSportsDbSource(FootballDataSource):
             except (TypeError, ValueError):
                 return None
 
+        # TheSportsDB returns idEvent as a numeric string; the API/frontend
+        # expect an int. Keep the string only if it isn't purely numeric.
+        raw_id = e.get("idEvent")
+        fixture_id = _int(raw_id) if str(raw_id).isdigit() else raw_id
+
         return Match(
-            fixture_id=e.get("idEvent"),
+            fixture_id=fixture_id,
             status=e.get("strStatus") or ("FT" if e.get("intHomeScore") is not None else "NS"),
             home=e.get("strHomeTeam", "Home"),
             away=e.get("strAwayTeam", "Away"),
@@ -71,6 +74,10 @@ class TheSportsDbSource(FootballDataSource):
             home_logo=e.get("strHomeTeamBadge", "") or "",
             away_logo=e.get("strAwayTeamBadge", "") or "",
             venue=e.get("strVenue", "") or "",
+            city=e.get("strCity", "") or "",
+            country=e.get("strCountry", "") or "",
+            competition=e.get("strLeague", "") or "",
+            date=(e.get("dateEvent", "") or "")[:10],
         )
 
     # ------------------------------------------------------------------
@@ -84,9 +91,12 @@ class TheSportsDbSource(FootballDataSource):
         return [self._to_match(e) for e in events]
 
     def latest_finished(self, limit: int = 10) -> list[Match]:
-        # eventspastleague returns the last played matches of a league.
+        # eventspastleague returns the last played matches of THIS league.
         data = self._get("eventspastleague.php", {"id": self.league})
         events = data.get("events") or []
+        # Defensive: keep only events of the configured league.
+        events = [e for e in events
+                  if not e.get("idLeague") or str(e.get("idLeague")) == str(self.league)]
         matches = [self._to_match(e) for e in events]
         finished = [m for m in matches if m.is_finished or m.home_goals is not None]
         return finished[:limit]
@@ -117,6 +127,3 @@ class TheSportsDbSource(FootballDataSource):
                     kind="Normal Goal",
                 ))
         return goals
-
-    def is_finished(self, status: str) -> bool:
-        return status in _FINISHED
