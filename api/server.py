@@ -60,7 +60,8 @@ app.add_middleware(
 
 # ── Background task state ────────────────────────────────────────────
 _running: dict[str, dict] = {}
-_cancel_flags: dict[str, bool] = {}
+_cancel_flags: dict[str, int] = {}     # profile_id -> run_id requested to cancel
+_run_counter = 0                       # monotonically increasing run identity
 _lock = threading.Lock()
 
 
@@ -146,8 +147,8 @@ def update_profile(profile_id: str, body: ProfileUpdate):
 @app.get("/api/profiles/{profile_id}/matches")
 def get_matches(profile_id: str, day: str | None = None):
     cfg = _profile_or_404(profile_id)
-    source = get_data_source(cfg)
     try:
+        source = get_data_source(cfg)          # may raise ValueError (bad provider)
         # An explicit ?day= always wins. Otherwise MATCH_MODE decides:
         #   today  -> fixtures of the current date (live competition)
         #   latest -> most recent finished matches (past seasons / demos)
@@ -157,7 +158,7 @@ def get_matches(profile_id: str, day: str | None = None):
             matches = source.fixtures_on()
         else:
             matches = source.latest_finished()
-    except RuntimeError as e:
+    except Exception as e:  # noqa: BLE001 — surface any data-layer failure as 502
         raise HTTPException(status_code=502, detail=str(e)) from e
     return [
         {
@@ -249,10 +250,14 @@ _STEP_PROGRESS = {
 
 
 # ── Generation (background) ──────────────────────────────────────────
-def _run_generation(profile_id: str, req: GenerateRequest):
+def _run_generation(profile_id: str, req: GenerateRequest, run_id: int):
+    def _is_current() -> bool:
+        # Only the run that still owns the slot may touch its state.
+        return _running.get(profile_id, {}).get("run_id") == run_id
+
     def on_step(step: str, msg: str):
         with _lock:
-            if profile_id in _running:
+            if _is_current():
                 _running[profile_id].update(
                     step=step, message=msg,
                     progress=_STEP_PROGRESS.get(step,
@@ -260,7 +265,7 @@ def _run_generation(profile_id: str, req: GenerateRequest):
                 )
 
     def check_cancel() -> bool:
-        return _cancel_flags.get(profile_id, False)
+        return _cancel_flags.get(profile_id) == run_id
 
     try:
         cfg = BrandProfile(profile_id)
@@ -271,40 +276,55 @@ def _run_generation(profile_id: str, req: GenerateRequest):
                           do_video=req.do_video, do_upload=req.do_upload,
                           do_social=req.do_social)
         with _lock:
-            _running[profile_id].update(state="done", result=result)
+            if _is_current():
+                _running[profile_id].update(state="done", result=result)
     except Exception as e:  # noqa: BLE001
         with _lock:
-            _running[profile_id].update(state="error", message=str(e))
+            if _is_current():
+                _running[profile_id].update(state="error", message=str(e))
     finally:
         time.sleep(30)  # let the client read the final state
         with _lock:
-            _running.pop(profile_id, None)
-            _cancel_flags.pop(profile_id, None)
+            # Only clear if this run still owns the slot (a newer run may have
+            # replaced it in the meantime).
+            if _is_current():
+                _running.pop(profile_id, None)
+                if _cancel_flags.get(profile_id) == run_id:
+                    _cancel_flags.pop(profile_id, None)
 
 
 @app.post("/api/profiles/{profile_id}/generate", status_code=202)
 def generate(profile_id: str, req: GenerateRequest):
+    global _run_counter
     _profile_or_404(profile_id)
     with _lock:
         if profile_id in _running and _running[profile_id].get("state") == "running":
             raise HTTPException(status_code=409, detail="A generation is already running")
-        _running[profile_id] = {"state": "running", "step": "start",
-                                "message": "Starting...", "fixture_id": req.fixture_id}
-        _cancel_flags[profile_id] = False
-    threading.Thread(target=_run_generation, args=(profile_id, req), daemon=True).start()
+        _run_counter += 1
+        run_id = _run_counter
+        _running[profile_id] = {"state": "running", "step": "start", "progress": 0,
+                                "message": "Starting...", "fixture_id": req.fixture_id,
+                                "run_id": run_id}
+        _cancel_flags.pop(profile_id, None)
+    threading.Thread(target=_run_generation, args=(profile_id, req, run_id),
+                     daemon=True).start()
     return {"ok": True, "message": "Generation started"}
 
 
 @app.get("/api/profiles/{profile_id}/status")
 def status(profile_id: str):
     with _lock:
-        return _running.get(profile_id, {"state": "idle"})
+        # Return a copy: the worker thread mutates the live dict during on_step.
+        return dict(_running.get(profile_id, {"state": "idle"}))
 
 
 @app.post("/api/profiles/{profile_id}/cancel")
 def cancel(profile_id: str):
     with _lock:
-        _cancel_flags[profile_id] = True
+        # Cancel only the run that currently owns the slot (by run identity).
+        cur = _running.get(profile_id, {})
+        if cur.get("state") == "running" and "run_id" in cur:
+            _cancel_flags[profile_id] = cur["run_id"]
     return {"ok": True, "message": "Cancellation requested"}
 
 
