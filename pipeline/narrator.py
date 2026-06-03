@@ -69,18 +69,58 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
     return call_llm(messages, provider=provider, max_tokens=600, label="Narrator")
 
 
+def _hashtag(text: str) -> str:
+    """Turn a name into a CamelCase hashtag: 'Real Madrid' -> '#RealMadrid'."""
+    parts = "".join(w.capitalize() for w in text.replace("-", " ").split())
+    return f"#{parts}" if parts else ""
+
+
+def build_tags(match: Match) -> list[str]:
+    """Deterministic hashtags: competition + teams + countries + scorers +
+    stadium + city — exactly the set the user asked for."""
+    tags: list[str] = []
+    # Competition (La Liga / World Cup ...).
+    if match.competition:
+        tags.append(_hashtag(match.competition))
+    # Teams.
+    tags += [_hashtag(match.home), _hashtag(match.away)]
+    # Country (and an explicit World Cup tag when it's the World Cup).
+    if "World Cup" in match.competition or "Mundial" in match.competition:
+        tags.append("#WorldCup2026")
+    if match.country:
+        tags.append(_hashtag(match.country))
+    # Scorers.
+    for g in match.goals:
+        t = _hashtag(g.player)
+        if t and t not in tags:
+            tags.append(t)
+    # Stadium + city.
+    if match.venue:
+        tags.append(_hashtag(match.venue))
+    if match.city:
+        tags.append(_hashtag(match.city))
+    tags.append("#Futbol")
+    # Dedupe preserving order, drop empties.
+    seen, out = set(), []
+    for t in tags:
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
 def youtube_metadata(match: Match, *, language: str = "es", provider: str | None = None) -> dict:
-    """Generate a YouTube title, description and tags for the match video."""
+    """Generate a YouTube title + description (LLM) and deterministic tags."""
     lang = _LANG_NAME.get(language, "Spanish")
     system = (
-        f"You generate YouTube metadata in {lang}. Respond as a JSON object with keys "
-        '"title" (<=90 chars), "description" (2-4 sentences), "tags" (list of 8-12 short '
-        "strings). Use only the given facts. No markdown, JSON only."
+        f"You generate a YouTube title and description in {lang}. Respond as JSON with "
+        '"title" (<=90 chars, include the scoreline) and "description" (2-4 sentences). '
+        "Use only the given facts. JSON only."
     )
     user = f"Match:\n{_facts_block(match)}"
     raw = call_llm(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        provider=provider, max_tokens=500, label="YT-Meta",
+        provider=provider, max_tokens=400, label="YT-Meta",
     )
     import json
 
@@ -89,9 +129,8 @@ def youtube_metadata(match: Match, *, language: str = "es", provider: str | None
         data = json.loads(repair_json(raw))
     except Exception:
         data = {}
-    # Defensive defaults so the pipeline never breaks on a bad LLM response.
     return {
         "title": (data.get("title") or match.scoreline)[:90],
         "description": data.get("description") or match.scoreline,
-        "tags": data.get("tags") or [match.home, match.away, "World Cup 2026", "football"],
+        "tags": build_tags(match),
     }
