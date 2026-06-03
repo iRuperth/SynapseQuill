@@ -94,11 +94,13 @@ function Card({ item, profileId, onPublished }: {
       </div>
 
       {item.video_url && (
-        <video src={item.video_url} controls
-          style={{
-            height: 380, width: 'auto', maxWidth: '100%',
-            display: 'block', borderRadius: 10, marginTop: 10, background: '#000',
-          }} />
+        <div style={{
+          width: 260, aspectRatio: '9 / 16', marginTop: 10,
+          borderRadius: 12, overflow: 'hidden', background: '#000',
+        }}>
+          <video src={item.video_url} controls
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+        </div>
       )}
 
       {item.narration && <p style={{ lineHeight: 1.5 }}>{item.narration}</p>}

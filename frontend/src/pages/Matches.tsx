@@ -44,6 +44,9 @@ export default function Matches() {
 
   useEffect(() => { load() /* eslint-disable-next-line */ }, [active, day])
 
+  // Clear the status poll when leaving the page.
+  useEffect(() => () => { if (poll.current) window.clearInterval(poll.current) }, [])
+
   function startPolling() {
     if (poll.current) window.clearInterval(poll.current)
     poll.current = window.setInterval(async () => {
