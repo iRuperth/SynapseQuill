@@ -38,7 +38,7 @@ def _slug_for(cfg) -> str:
     if explicit:
         return explicit
     return (_LEAGUE_SLUG.get(cfg.LEAGUE_ID)
-            or _LEAGUE_SLUG.get(str(getattr(cfg, "_thesportsdb_league", "")))
+            or _LEAGUE_SLUG.get(str(getattr(cfg, "_tsdb_league", "")))
             or "fifa.world")
 
 
@@ -74,6 +74,7 @@ def _scorers_from_summary(slug: str, event_id: str) -> list[Goal]:
             team=(ke.get("team") or {}).get("displayName", ""),
             minute=str((ke.get("clock") or {}).get("displayValue", "?")).rstrip("'"),
             kind=kind,
+            description=(ke.get("text") or "").strip(),   # vivid play description
         ))
     return goals
 

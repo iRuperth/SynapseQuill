@@ -36,6 +36,8 @@ def _facts_block(match: Match) -> str:
         for g in match.goals:
             extra = "" if g.kind == "Normal Goal" else f" [{g.kind}]"
             lines.append(f"  - {g.minute}' {g.player} ({g.team}){extra}")
+            if g.description:
+                lines.append(f"      how it happened: {g.description}")
     else:
         lines.append("Goals: none scored (0-0).")
     if match.cards:
@@ -51,10 +53,17 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
     lang = _LANG_NAME.get(language, "Spanish")
 
     system = (system_preamble + "\n\n" if system_preamble else "") + (
-        f"You are an energetic football broadcaster. Write the narration ONLY in {lang}. "
-        "Use the provided match facts and NOTHING else — never invent scorers, minutes "
-        "or scores. Make it vivid and emotional, 90-140 words, ready to be read aloud. "
-        "Do not add headings, markdown, hashtags or stage directions — just the spoken script."
+        f"You are a CLASSIC, passionate football play-by-play commentator. Write ONLY in {lang}. "
+        "Narrate like a live radio/TV announcer at peak excitement:\n"
+        "- Short, explosive sentences. Build tension toward each goal.\n"
+        "- Use interjections and stretched cheers on goals "
+        "(in Spanish: '¡GOOOOOL!', '¡QUÉ GOLAZO!', '¡INCREÍBLE!'; in English: 'GOOOAL!', 'WHAT A STRIKE!').\n"
+        "- Put the most intense words in CAPITALS for emphasis.\n"
+        "- When 'how it happened' is given for a goal, describe the play vividly using it.\n"
+        "- Mention the stadium and the drama of cards if present.\n"
+        "- End with an epic closing line about the result.\n"
+        "STRICT: use ONLY the provided facts — never invent scorers, minutes, scores or plays. "
+        "90-150 words. Output ONLY the spoken script: no headings, markdown, hashtags or stage directions."
     )
 
     user = (

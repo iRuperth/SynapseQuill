@@ -31,6 +31,7 @@ class Goal:
     team: str
     minute: str          # "23" or "90+4"
     kind: str            # "Normal Goal", "Penalty", "Own Goal"
+    description: str = ""  # how it happened, e.g. "left footed shot..." (from ESPN)
 
 
 @dataclass
@@ -114,13 +115,22 @@ class MatchMonitor:
         return data
 
     # ------------------------------------------------------------------
+    def _parse_list(self, raw: list) -> list[Match]:
+        """Parse fixtures, dropping any without a usable id."""
+        out = []
+        for f in raw:
+            m = self._parse_fixture(f)
+            if m.fixture_id is not None:
+                out.append(m)
+        return out
+
     def fixtures_on(self, day: str | None = None) -> list[Match]:
         """Return all matches on `day` (YYYY-MM-DD, default today)."""
         day = day or date.today().isoformat()
         raw = self._get("/fixtures", {
             "league": self.league_id, "season": self.season, "date": day,
         })
-        return [self._parse_fixture(f) for f in raw]
+        return self._parse_list(raw)
 
     def fixtures_between(self, frm: str, to: str) -> list[Match]:
         """Return all matches in a date range (YYYY-MM-DD). Useful for historical
@@ -128,14 +138,14 @@ class MatchMonitor:
         raw = self._get("/fixtures", {
             "league": self.league_id, "season": self.season, "from": frm, "to": to,
         })
-        return [self._parse_fixture(f) for f in raw]
+        return self._parse_list(raw)
 
     def fixtures_round(self, round_name: str) -> list[Match]:
         """Return all matches of a given round, e.g. 'Regular Season - 38'."""
         raw = self._get("/fixtures", {
             "league": self.league_id, "season": self.season, "round": round_name,
         })
-        return [self._parse_fixture(f) for f in raw]
+        return self._parse_list(raw)
 
     def latest_finished(self, limit: int = 10) -> list[Match]:
         """Return the most recent finished matches of the configured competition.
@@ -145,9 +155,9 @@ class MatchMonitor:
         ago it ended) and returns the last finished ones, most recent first.
         """
         raw = self._get("/fixtures", {"league": self.league_id, "season": self.season})
-        matches = [self._parse_fixture(f) for f in raw]
-        finished = [m for m in matches if m.is_finished]
-        finished.sort(key=lambda m: m.fixture_id, reverse=True)
+        finished = [m for m in self._parse_list(raw) if m.is_finished]
+        # Sort by kickoff date (most recent first); fixture_id as tiebreaker.
+        finished.sort(key=lambda m: (m.date or "", m.fixture_id or 0), reverse=True)
         return finished[:limit]
 
     def fixture(self, fixture_id: int) -> Match:

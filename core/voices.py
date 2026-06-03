@@ -10,7 +10,7 @@ VOICES = {
     "es_male": {
         "label": "Hombre · Español (locutor)",
         "voice": "es-ES-AlvaroNeural",
-        "rate": "+12%",
+        "rate": "+16%",          # extra energy for a play-by-play feel
         "language": "es",
     },
     "es_female": {
