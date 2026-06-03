@@ -28,6 +28,9 @@ def facts_check(match: Match, text: str) -> dict:
     # The exact final score should appear (e.g. "5-2", "5 a 2", "5:2", "5 - 2").
     # Accept BOTH orderings: natural narration often states the score from the
     # winner's side ("Barcelona ganó 2 a 1") regardless of home/away order.
+    # Normalise unicode dashes (‑ – —) to a plain hyphen first.
+    norm = text.translate({0x2010: "-", 0x2011: "-", 0x2012: "-",
+                           0x2013: "-", 0x2014: "-", 0x2212: "-"})
     h, a = match.home_goals, match.away_goals
     if h is not None and a is not None:
         sep = r"\s*(?:[-:x]|\sa\s|\sto\s)\s*"   # "-", ":", "x", " a ", " to "
@@ -35,7 +38,7 @@ def facts_check(match: Match, text: str) -> dict:
             rf"\b{h}{sep}{a}\b",
             rf"\b{a}{sep}{h}\b",                # reversed (winner-first phrasing)
         ]
-        if not any(re.search(p, text) for p in patterns):
+        if not any(re.search(p, norm) for p in patterns):
             issues.append(f"final score {h}-{a} not clearly stated")
 
     # Scorer-invention detection is left to the stronger LLM-judge layer below:
