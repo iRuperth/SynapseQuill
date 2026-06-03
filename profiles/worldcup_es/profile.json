@@ -15,6 +15,6 @@
     "values": "accuracy of scores and scorers above all"
   },
   "competition": {
-    "preset": "laliga_2023"
+    "preset": "laliga"
   }
 }
