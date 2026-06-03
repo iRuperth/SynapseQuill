@@ -39,17 +39,19 @@ def _subtitle_clips(subtitles: list[dict], total: float):
     from .voice_generator import word_cues
 
     font = _font_path()
-    base_y = H - 340             # bottom area, clear of the scoreboard/timeline
+    base_y = H - 360             # bottom area, clear of the scoreboard/timeline
     clips = []
     for cue in word_cues(subtitles):
         start, end = min(cue["start"], total), min(cue["end"], total)
         if end <= start:
             continue
         dur = end - start
+        # method="caption" with a fixed width centres the word and wraps long
+        # ones, so nothing ever gets clipped at the frame edges.
         txt = TextClip(
-            text=cue["text"].upper(), font=font, font_size=96,
-            color="yellow", stroke_color="black", stroke_width=6,
-            method="label", text_align="center",
+            text=cue["text"].upper(), font=font, font_size=84,
+            color="yellow", stroke_color="black", stroke_width=5,
+            method="caption", size=(int(W * 0.92), None), text_align="center",
         ).with_start(start).with_duration(dur)
 
         # Jump animation: the word pops up a few px then settles (ease-out).
