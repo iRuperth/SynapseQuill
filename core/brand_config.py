@@ -101,7 +101,7 @@ class BrandProfile:
 
         self.DATA_PROVIDER = (preset.get("provider")
                               or comp.get("provider")
-                              or self._env_get("DATA_PROVIDER", "apifootball")).lower()
+                              or self._env_get("DATA_PROVIDER", "espn")).lower()
         self.LEAGUE_ID = int(preset.get("league_id")
                              or comp.get("league_id")
                              or self._env_get("APIFOOTBALL_LEAGUE", 140))
@@ -110,6 +110,10 @@ class BrandProfile:
                           or self._env_get("APIFOOTBALL_SEASON", 2023))
         self.MATCH_MODE = (preset.get("mode") or comp.get("mode")
                            or self._env_get("MATCH_MODE", "latest")).lower()
+        # ESPN league slug (esp.1 = La Liga, fifa.world = World Cup) from preset.
+        self.ESPN_SLUG = (preset.get("espn_slug")
+                          or comp.get("espn_slug")
+                          or self._env_get("ESPN_LEAGUE_SLUG", "esp.1"))
         # TheSportsDB league id (World Cup = 4429) may come from the preset.
         self._tsdb_league = (preset.get("tsdb_league")
                              or self._env_get("THESPORTSDB_LEAGUE", "4429"))

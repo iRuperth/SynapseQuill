@@ -9,41 +9,26 @@ data provider and its identifiers so switching is a single choice.
 # key -> preset. `provider` picks the data source; the id fields are read by
 # that source (apifootball uses league_id/season; thesportsdb uses tsdb_league).
 COMPETITIONS = {
-    "laliga_2023": {
-        "label": "La Liga 2023/24 (España)",
-        "provider": "apifootball",
-        "league_id": 140,
-        "season": 2023,
+    # Default until the World Cup starts: Spanish first division (La Liga),
+    # CURRENT season via ESPN (free, with scorers+minutes). Never old seasons.
+    "laliga": {
+        "label": "La Liga — Primera División (España, temporada actual)",
+        "provider": "espn",
+        "espn_slug": "esp.1",       # ESPN slug for La Liga
         "mode": "latest",
-        "scorers": "full",          # API-Football gives scorers on the free plan
+        "scorers": "full",          # ESPN gives scorers + minutes for free
     },
-    "premier_2023": {
-        "label": "Premier League 2023/24",
-        "provider": "apifootball",
-        "league_id": 39,
-        "season": 2023,
-        "mode": "latest",
-        "scorers": "full",
-    },
+    # Switch to this once the 2026 World Cup kicks off (11 Jun 2026).
     "worldcup_2026": {
         "label": "Mundial 2026 (FIFA World Cup)",
-        "provider": "thesportsdb",
-        "tsdb_league": "4429",
-        "season": 2026,
+        "provider": "espn",
+        "espn_slug": "fifa.world",  # ESPN slug for the World Cup
         "mode": "today",            # live competition -> show today's fixtures
-        "scorers": "espn",          # scores from TheSportsDB, scorers via ESPN
-    },
-    "worldcup_2022": {
-        "label": "Mundial 2022 (Qatar)",
-        "provider": "apifootball",
-        "league_id": 1,
-        "season": 2022,
-        "mode": "latest",
         "scorers": "full",
     },
 }
 
-DEFAULT = "laliga_2023"
+DEFAULT = "laliga"
 
 
 def get(key: str) -> dict:
