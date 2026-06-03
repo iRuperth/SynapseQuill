@@ -25,21 +25,30 @@ def facts_check(match: Match, text: str) -> dict:
     """Cheap, deterministic verification against the raw match data."""
     issues = []
 
-    # The exact final score should appear (e.g. "5-2", "5 a 2", "5:2", "5 - 2").
-    # Accept BOTH orderings: natural narration often states the score from the
-    # winner's side ("Barcelona ganó 2 a 1") regardless of home/away order.
+    # Verify the FINAL score. A play-by-play narration states running scores as
+    # it goes, so "the correct pair appears somewhere" is not enough — a wrong
+    # invented final could slip past while a true running score matches. So we
+    # check the LAST score-shaped token in the text equals the real final, and
+    # that no OTHER score appears in a full-time context.
     # Normalise unicode dashes (‑ – —) to a plain hyphen first.
     norm = text.translate({0x2010: "-", 0x2011: "-", 0x2012: "-",
                            0x2013: "-", 0x2014: "-", 0x2212: "-"})
     h, a = match.home_goals, match.away_goals
     if h is not None and a is not None:
-        sep = r"\s*(?:[-:x]|\sa\s|\sto\s)\s*"   # "-", ":", "x", " a ", " to "
-        patterns = [
-            rf"\b{h}{sep}{a}\b",
-            rf"\b{a}{sep}{h}\b",                # reversed (winner-first phrasing)
-        ]
-        if not any(re.search(p, norm) for p in patterns):
+        sep = r"\s*(?:[-:x]|\s(?:a|to)\s)\s*"
+        score_re = re.compile(rf"\b(\d{{1,2}}){sep}(\d{{1,2}})\b")
+        target = frozenset((h, a))             # order-agnostic final score
+        pairs = [frozenset((int(m1), int(m2))) for m1, m2 in score_re.findall(norm)]
+
+        # 1) The correct final must appear at least once.
+        if target not in pairs:
             issues.append(f"final score {h}-{a} not clearly stated")
+        # 2) The LAST score mentioned (the running total at the end / the stated
+        #    final) must equal the real final — a play-by-play ends on the final
+        #    score, so a hallucinated final is caught here even if a correct
+        #    running score appeared earlier.
+        elif pairs and pairs[-1] != target:
+            issues.append(f"the last score stated ({list(pairs[-1])}) is not the final {h}-{a}")
 
     # Scorer-invention detection is left to the stronger LLM-judge layer below:
     # a regex over capitalised tokens produces too many false positives in free
