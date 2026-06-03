@@ -44,30 +44,70 @@ def _center(d, text, y, font, fill):
     d.text(((W - (bb[2] - bb[0])) / 2, y), text, font=font, fill=fill)
 
 
+def _center_at(d, text, cx, y, font, fill):
+    """Draw `text` horizontally centred on x = cx."""
+    bb = d.textbbox((0, 0), text, font=font)
+    d.text((cx - (bb[2] - bb[0]) / 2, y), text, font=font, fill=fill)
+
+
 def _ease(t: float) -> float:
     """Ease-out cubic for smooth motion (t in 0..1)."""
     return 1 - (1 - t) ** 3
 
 
+_CREST_CACHE: dict[str, Image.Image | None] = {}
+
+
+def _crest(url: str) -> Image.Image | None:
+    """Download and cache a team crest (RGBA), resized to ~160px."""
+    if not url:
+        return None
+    if url not in _CREST_CACHE:
+        try:
+            import io
+
+            import requests
+            r = requests.get(url, timeout=20)
+            r.raise_for_status()
+            img = Image.open(io.BytesIO(r.content)).convert("RGBA")
+            img.thumbnail((160, 160))
+            _CREST_CACHE[url] = img
+        except Exception:
+            _CREST_CACHE[url] = None
+    return _CREST_CACHE[url]
+
+
 # ── Scoreboard clip (score counts up, names slide in) ────────────────
 def _scoreboard_frame(match: Match, p: float):
     """Render one frame at progress p (0..1)."""
-    img = Image.new("RGB", (W, H), _BG)
+    img = Image.new("RGBA", (W, H), (*_BG, 255))
     d = ImageDraw.Draw(img)
 
     # Vertical layout, centred for a 1080x1920 reel.
     # Header: real competition name + date (not hardcoded).
     if p > 0.05:
         header = (match.competition or "").upper() or "FÚTBOL"
-        _center(d, header, 340, _font(46), _MUTED)
+        _center(d, header, 300, _font(46), _MUTED)
         if match.date:
-            _center(d, match.date, 410, _font(34), _MUTED)
+            _center(d, match.date, 370, _font(34), _MUTED)
+
+    # Team crests above each score number.
+    home_crest, away_crest = _crest(match.home_logo), _crest(match.away_logo)
+    home_cx, away_cx = int(W * 0.30), int(W * 0.70)
+    if p > 0.1:
+        if home_crest:
+            img.alpha_composite(home_crest, (home_cx - home_crest.width // 2, 470))
+        if away_crest:
+            img.alpha_composite(away_crest, (away_cx - away_crest.width // 2, 470))
 
     # Score counts up from 0 to the real score over the first 60% of the clip.
     grow = _ease(min(p / 0.6, 1.0))
     hg = round((match.home_goals or 0) * grow)
     ag = round((match.away_goals or 0) * grow)
-    _center(d, f"{hg}   -   {ag}", 720, _font(220), _ACCENT)
+    big = _font(200)
+    _center_at(d, str(hg), home_cx, 660, big, _ACCENT)
+    _center(d, "-", 760, _font(160), _MUTED)
+    _center_at(d, str(ag), away_cx, 660, big, _ACCENT)
 
     # Team names fade in after the score starts counting.
     if p > 0.2:
