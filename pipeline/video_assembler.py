@@ -68,16 +68,11 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
              audio_path: Path, subtitles: list[dict], metadata: dict) -> Path:
     """Render the .mp4 and return its path.
 
-    The base layer is animated broadcast-style motion graphics (scoreboard +
-    goal timeline). Any FLUX ambience images are shown briefly as an intro/cover
-    behind a fade. Narration audio and readable subtitles sit on top.
+    Animated broadcast graphics (crowd backdrop + crests + scoreboard + goal/card
+    timeline) form the base; the crowd image is composited inside each frame
+    (robust — no MoviePy masks), with narration audio and karaoke subtitles on top.
     """
-    from moviepy import (
-        AudioFileClip,
-        ColorClip,
-        CompositeVideoClip,
-        ImageClip,
-    )
+    from moviepy import AudioFileClip, CompositeVideoClip
     from moviepy.video.fx import CrossFadeIn
 
     from .animated_graphics import build_animated_clips
@@ -85,22 +80,12 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
     audio = AudioFileClip(str(audio_path))
     total = float(audio.duration)
 
-    # ── Background: crowd/stadium ambience fills the WHOLE video (no more empty
-    # black space). Darkened so the graphics and subtitles stay readable.
+    # Crowd backdrop image (filename contains "ambience"), composited into the
+    # graphics frames themselves rather than layered separately.
     ambience = [p for p in images if "ambience" in p.name]
-    if ambience:
-        bg = (ImageClip(str(ambience[0]))
-              .resized((W, H))
-              .with_duration(total))
-        dim = (ColorClip(size=(W, H), color=(8, 12, 24))
-               .with_opacity(0.55)
-               .with_duration(total))
-        bg_layers = [bg, dim]
-    else:
-        bg_layers = [ColorClip(size=(W, H), color=(11, 16, 32)).with_duration(total)]
+    backdrop = str(ambience[0]) if ambience else None
 
-    # ── Animated graphics (transparent) layered over the crowd.
-    anim = build_animated_clips(cfg, match, total)
+    anim = build_animated_clips(cfg, match, total, background=backdrop)
     fade = 0.5
     graph = []
     cursor = 0.0
@@ -112,7 +97,7 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
         graph.append(c)
         cursor += seg_len
 
-    layers = [*bg_layers, *graph, *_subtitle_clips(subtitles, total)]
+    layers = [*graph, *_subtitle_clips(subtitles, total)]
     video = CompositeVideoClip(layers, size=(W, H)).with_audio(audio)
 
     out = cfg.VIDEO_DIR / f"match_{match.fixture_id}.mp4"

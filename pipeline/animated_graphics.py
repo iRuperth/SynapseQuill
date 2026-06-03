@@ -11,7 +11,7 @@ needs no external assets. Returns a list of clips the assembler concatenates.
 
 import os
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
 from core.brand_config import BrandProfile
 
@@ -24,6 +24,31 @@ _ACCENT = (45, 212, 191)
 _ACCENT2 = (99, 102, 241)
 _TEXT = (231, 236, 247)
 _MUTED = (154, 166, 196)
+
+# Optional crowd backdrop, composited directly into every frame (robust: no
+# MoviePy masks, so no corrupt mp4s). Set via set_background().
+_BACKDROP: Image.Image | None = None
+
+
+def set_background(path) -> None:
+    """Load a crowd/stadium image as the darkened backdrop for all frames."""
+    global _BACKDROP
+    if not path:
+        _BACKDROP = None
+        return
+    try:
+        img = Image.open(path).convert("RGB").resize((W, H))
+        img = ImageEnhance.Brightness(img).enhance(0.38)   # darken for legibility
+        _BACKDROP = img
+    except Exception:
+        _BACKDROP = None
+
+
+def _canvas() -> Image.Image:
+    """A fresh frame base: the darkened crowd, or the flat brand background."""
+    if _BACKDROP is not None:
+        return _BACKDROP.copy()
+    return Image.new("RGB", (W, H), _BG)
 
 
 def _font(size: int, bold: bool = True):
@@ -80,7 +105,7 @@ def _crest(url: str) -> Image.Image | None:
 # ── Scoreboard clip (score counts up, names slide in) ────────────────
 def _scoreboard_frame(match: Match, p: float):
     """Render one frame at progress p (0..1)."""
-    img = Image.new("RGBA", (W, H), (*_BG, 255))
+    img = _canvas().convert("RGBA")
     d = ImageDraw.Draw(img)
 
     # Vertical layout, centred for a 1080x1920 reel.
@@ -126,17 +151,9 @@ def scoreboard_clip(match: Match, duration: float):
     from moviepy import VideoClip
 
     def make(t):
-        return np.array(_scoreboard_frame(match, min(t / duration, 1.0)))[:, :, :3]
+        return np.array(_scoreboard_frame(match, min(t / duration, 1.0)).convert("RGB"))
 
-    def mask(t):
-        # Alpha = where pixels differ from the flat background, so the graphics
-        # float over the crowd backdrop instead of a solid box.
-        frame = np.array(_scoreboard_frame(match, min(t / duration, 1.0)))[:, :, :3]
-        diff = np.abs(frame.astype(int) - np.array(_BG)).sum(axis=2)
-        return np.clip(diff / 60.0, 0, 1)
-
-    clip = VideoClip(make, duration=duration)
-    return clip.with_mask(VideoClip(mask, duration=duration, is_mask=True))
+    return VideoClip(make, duration=duration)
 
 
 _YELLOW = (250, 204, 21)
@@ -152,7 +169,7 @@ def _minute_num(s: str) -> int:
 
 # ── Event timeline clip (goals + cards slide in, ordered by minute) ──
 def _timeline_frame(match: Match, language: str, p: float):
-    img = Image.new("RGB", (W, H), _BG)
+    img = _canvas()
     d = ImageDraw.Draw(img)
     title = "RESUMEN" if language == "es" else "SUMMARY"
     _center(d, title, 360, _font(60), _ACCENT)
@@ -197,20 +214,20 @@ def timeline_clip(match: Match, language: str, duration: float):
     from moviepy import VideoClip
 
     def make(t):
-        return np.array(_timeline_frame(match, language, min(t / duration, 1.0)))[:, :, :3]
+        return np.array(_timeline_frame(match, language, min(t / duration, 1.0)).convert("RGB"))
 
-    def mask(t):
-        frame = np.array(_timeline_frame(match, language, min(t / duration, 1.0)))[:, :, :3]
-        diff = np.abs(frame.astype(int) - np.array(_BG)).sum(axis=2)
-        return np.clip(diff / 60.0, 0, 1)
-
-    clip = VideoClip(make, duration=duration)
-    return clip.with_mask(VideoClip(mask, duration=duration, is_mask=True))
+    return VideoClip(make, duration=duration)
 
 
-def build_animated_clips(cfg: BrandProfile, match: Match, total: float) -> list:
-    """Return animated MoviePy clips spanning `total` seconds."""
-    if match.goals:
+def build_animated_clips(cfg: BrandProfile, match: Match, total: float,
+                         background=None) -> list:
+    """Return animated MoviePy clips spanning `total` seconds.
+
+    `background` (optional path) is composited into every frame as a darkened
+    crowd backdrop — robust, no MoviePy masks (avoids corrupt mp4s).
+    """
+    set_background(background)
+    if match.goals or match.cards:
         sb = total * 0.45
         tl = total - sb
         return [scoreboard_clip(match, sb), timeline_clip(match, cfg.LANGUAGE, tl)]
