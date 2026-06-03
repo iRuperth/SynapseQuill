@@ -19,7 +19,12 @@ _LANG_NAME = {
 
 def _facts_block(match: Match) -> str:
     """Build a compact, unambiguous factual summary for the LLM."""
-    lines = [
+    lines = []
+    if match.competition:
+        lines.append(f"Competition: {match.competition}")
+    if match.date:
+        lines.append(f"Date: {match.date}")
+    lines += [
         f"Home team: {match.home}",
         f"Away team: {match.away}",
         f"Final score: {match.home} {match.home_goals} - {match.away_goals} {match.away}",
@@ -33,6 +38,10 @@ def _facts_block(match: Match) -> str:
             lines.append(f"  - {g.minute}' {g.player} ({g.team}){extra}")
     else:
         lines.append("Goals: none scored (0-0).")
+    if match.cards:
+        lines.append("Cards:")
+        for c in match.cards:
+            lines.append(f"  - {c.minute}' {c.color} card, {c.player} ({c.team})")
     return "\n".join(lines)
 
 
