@@ -39,7 +39,7 @@ def _subtitle_clips(subtitles: list[dict], total: float):
     from .voice_generator import word_cues
 
     font = _font_path()
-    base_y = H - 360             # bottom area, clear of the scoreboard/timeline
+    base_y = H - 470             # safe lower band, never clips the bottom edge
     clips = []
     for cue in word_cues(subtitles):
         start, end = min(cue["start"], total), min(cue["end"], total)
@@ -57,7 +57,7 @@ def _subtitle_clips(subtitles: list[dict], total: float):
         # Jump animation: the word pops up a few px then settles (ease-out).
         def _pos(t, _y=base_y, _d=dur):
             prog = min(t / max(_d * 0.4, 0.01), 1.0)
-            jump = int(40 * (1 - prog) ** 2)      # starts +40px up, settles
+            jump = int(20 * (1 - prog) ** 2)      # small bounce, stays on screen
             return ("center", _y - jump)
 
         clips.append(txt.with_position(_pos))
