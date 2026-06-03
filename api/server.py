@@ -306,8 +306,17 @@ def generate(profile_id: str, req: GenerateRequest):
                                 "message": "Starting...", "fixture_id": req.fixture_id,
                                 "run_id": run_id}
         _cancel_flags.pop(profile_id, None)
-    threading.Thread(target=_run_generation, args=(profile_id, req, run_id),
-                     daemon=True).start()
+    try:
+        threading.Thread(target=_run_generation, args=(profile_id, req, run_id),
+                         daemon=True).start()
+    except Exception as e:  # noqa: BLE001 — thread creation can fail (resource limits)
+        # Release the slot we just published so the profile isn't stuck on
+        # "running" forever (the worker that owns cleanup never started).
+        with _lock:
+            if _running.get(profile_id, {}).get("run_id") == run_id:
+                _running.pop(profile_id, None)
+        raise HTTPException(status_code=503,
+                            detail=f"Could not start generation: {e}") from e
     return {"ok": True, "message": "Generation started"}
 
 
