@@ -3,6 +3,21 @@ import { cancelGeneration, generate, getMatches, getStatus } from '../api/client
 import { useProfile } from '../components/useProfile'
 import type { GenerationStatus, Match } from '../types'
 
+// Friendly Spanish label for each pipeline step.
+const STEP_LABEL: Record<string, string> = {
+  start: 'Preparando…',
+  enrich: 'Buscando goleadores…',
+  narrate: 'Escribiendo la narración…',
+  guardrail: 'Verificando los datos…',
+  metadata: 'Generando título y etiquetas…',
+  media: 'Creando las imágenes…',
+  voice: 'Grabando la voz y subtítulos…',
+  video: 'Montando el vídeo…',
+  social: 'Generando texto para redes…',
+  upload: 'Subiendo a YouTube…',
+  done: 'Casi listo…',
+}
+
 export default function Matches() {
   const { active } = useProfile()
   // Empty day = let the backend show the latest finished matches of the
@@ -71,14 +86,19 @@ export default function Matches() {
       {busy && (
         <div style={statusBox}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span><strong>Generando…</strong> {status.message}</span>
+            <span style={{ fontSize: 17 }}>
+              🎬 <strong>Generando vídeo…</strong>
+              <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+                {STEP_LABEL[status.step ?? ''] ?? status.message}
+              </span>
+            </span>
             <button onClick={() => active && cancelGeneration(active)}
               style={{ ...btnStyle, background: 'transparent', border: '1px solid var(--border)', padding: '4px 10px' }}>
               Cancelar
             </button>
           </div>
           {/* Progress bar */}
-          <div style={{ height: 10, borderRadius: 999, background: 'var(--bg)', overflow: 'hidden' }}>
+          <div style={{ height: 12, borderRadius: 999, background: 'var(--bg)', overflow: 'hidden' }}>
             <div style={{
               height: '100%', width: `${status.progress ?? 0}%`,
               background: 'linear-gradient(90deg, var(--accent), var(--accent-2))',

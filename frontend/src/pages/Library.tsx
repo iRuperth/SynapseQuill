@@ -1,23 +1,58 @@
-import { useEffect, useState } from 'react'
-import { getContent, publishVideo } from '../api/client'
+import { useEffect, useRef, useState } from 'react'
+import { getContent, getStatus, publishVideo } from '../api/client'
 import { useProfile } from '../components/useProfile'
-import type { ContentRecord } from '../types'
+import type { ContentRecord, GenerationStatus } from '../types'
 
 export default function Library() {
   const { active } = useProfile()
   const [items, setItems] = useState<ContentRecord[]>([])
+  const [status, setStatus] = useState<GenerationStatus>({ state: 'idle' })
+  const poll = useRef<number | null>(null)
 
   function reload() {
     if (active) getContent(active).then(setItems).catch(() => setItems([]))
   }
   useEffect(reload, [active])
 
+  // Poll the generation status so the library shows "generating" too.
+  useEffect(() => {
+    if (!active) return
+    if (poll.current) window.clearInterval(poll.current)
+    poll.current = window.setInterval(async () => {
+      const s = await getStatus(active).catch(() => ({ state: 'idle' }) as GenerationStatus)
+      setStatus(s)
+      if (s.state === 'done') reload()
+    }, 1500)
+    return () => { if (poll.current) window.clearInterval(poll.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active])
+
+  const generating = status.state === 'running'
+
   return (
     <div>
       <h1 style={{ marginTop: 0 }}>Biblioteca</h1>
       <p style={{ color: 'var(--text-muted)' }}>Contenido generado para este perfil.</p>
 
-      {!items.length && <p style={{ color: 'var(--text-muted)' }}>Aún no hay contenido generado.</p>}
+      {generating && (
+        <div style={{
+          padding: 14, marginBottom: 16, borderRadius: 12,
+          background: 'var(--bg-elevated)', border: '1px solid var(--accent)',
+        }}>
+          🎬 <strong>Se está generando el vídeo…</strong>
+          <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>{status.message}</span>
+          <div style={{ height: 10, borderRadius: 999, background: 'var(--bg)', overflow: 'hidden', marginTop: 8 }}>
+            <div style={{
+              height: '100%', width: `${status.progress ?? 0}%`,
+              background: 'linear-gradient(90deg, var(--accent), var(--accent-2))',
+              transition: 'width .4s ease',
+            }} />
+          </div>
+        </div>
+      )}
+
+      {!items.length && !generating &&
+        <p style={{ color: 'var(--text-muted)' }}>Aún no hay contenido generado.</p>}
 
       <div style={{ display: 'grid', gap: 14, marginTop: 16 }}>
         {items.map((it) => (
