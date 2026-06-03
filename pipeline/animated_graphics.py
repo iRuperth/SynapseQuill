@@ -56,8 +56,12 @@ def _scoreboard_frame(match: Match, p: float):
     d = ImageDraw.Draw(img)
 
     # Vertical layout, centred for a 1080x1920 reel.
+    # Header: real competition name + date (not hardcoded).
     if p > 0.05:
-        _center(d, "FIFA WORLD CUP", 380, _font(48), _MUTED)
+        header = (match.competition or "").upper() or "FÚTBOL"
+        _center(d, header, 340, _font(46), _MUTED)
+        if match.date:
+            _center(d, match.date, 410, _font(34), _MUTED)
 
     # Score counts up from 0 to the real score over the first 60% of the clip.
     grow = _ease(min(p / 0.6, 1.0))
@@ -67,9 +71,9 @@ def _scoreboard_frame(match: Match, p: float):
 
     # Team names fade in after the score starts counting.
     if p > 0.2:
-        _center(d, match.home.upper(), 1020, _font(72), _TEXT)
-        _center(d, "vs", 1125, _font(40), _MUTED)
-        _center(d, match.away.upper(), 1195, _font(72), _TEXT)
+        _center(d, match.home.upper(), 1020, _font(64), _TEXT)
+        _center(d, "vs", 1115, _font(40), _MUTED)
+        _center(d, match.away.upper(), 1180, _font(64), _TEXT)
 
     # Accent underline grows.
     bar_w = int((W * 0.6) * _ease(min(p / 0.8, 1.0)))
@@ -95,33 +99,56 @@ def scoreboard_clip(match: Match, duration: float):
     return clip.with_mask(VideoClip(mask, duration=duration, is_mask=True))
 
 
-# ── Goal timeline clip (each scorer slides in) ───────────────────────
+_YELLOW = (250, 204, 21)
+_RED = (239, 68, 68)
+
+
+def _minute_num(s: str) -> int:
+    try:
+        return int(str(s).split("+")[0])
+    except ValueError:
+        return 999
+
+
+# ── Event timeline clip (goals + cards slide in, ordered by minute) ──
 def _timeline_frame(match: Match, language: str, p: float):
     img = Image.new("RGB", (W, H), _BG)
     d = ImageDraw.Draw(img)
-    title = "GOLES" if language == "es" else "GOALS"
-    _center(d, title, 380, _font(64), _ACCENT)
+    title = "RESUMEN" if language == "es" else "SUMMARY"
+    _center(d, title, 360, _font(60), _ACCENT)
 
-    goals = match.goals[:8]
-    n = len(goals)
+    # Merge goals and cards into a single timeline ordered by minute.
+    events = []
+    for g in match.goals:
+        tag = "⚽" if g.kind == "Normal Goal" else ("🅿" if "Pen" in g.kind else "⚽")
+        events.append((_minute_num(g.minute), g.minute, "goal", g.player, tag))
+    for c in match.cards:
+        events.append((_minute_num(c.minute), c.minute, c.color.lower(), c.player, None))
+    events.sort(key=lambda e: e[0])
+    events = events[:9]
+
+    n = len(events)
     if not n:
         return img
-    # Reveal goals one by one across the clip.
     reveal_each = 1.0 / n
-    y = 560
-    for i, g in enumerate(goals):
-        start = i * reveal_each
-        local = (p - start) / reveal_each
+    y = 540
+    for i, (_, minute, kind, player, _tag) in enumerate(events):
+        local = (p - i * reveal_each) / reveal_each
         if local <= 0:
             continue
-        local = min(local, 1.0)
-        e = _ease(local)
-        x = int(120 + (1 - e) * 300)          # slide in from the right
-        # Fade via colour interpolation toward full text colour.
+        e = _ease(min(local, 1.0))
+        x = int(110 + (1 - e) * 280)
         shade = tuple(int(_MUTED[k] + (_TEXT[k] - _MUTED[k]) * e) for k in range(3))
-        extra = "" if g.kind == "Normal Goal" else f"  ({g.kind})"
-        d.text((x, y), f"{g.minute}'  {g.player}{extra}", font=_font(52), fill=shade)
-        y += 130
+
+        # Coloured marker box: card colour, or accent for a goal.
+        box_color = _YELLOW if kind == "yellow" else _RED if kind == "red" else _ACCENT
+        d.rectangle([x, y + 6, x + 46, y + 64], fill=box_color)
+        icon = "⚽" if kind == "goal" else ("R" if kind == "red" else "Y")
+        if kind != "goal":
+            d.text((x + 12, y + 8), icon, font=_font(40), fill=(20, 20, 20))
+
+        d.text((x + 70, y), f"{minute}'  {player}", font=_font(50), fill=shade)
+        y += 120
     return img
 
 
