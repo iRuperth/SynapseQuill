@@ -52,6 +52,8 @@ class Match:
     home_logo: str = ""
     away_logo: str = ""
     venue: str = ""
+    city: str = ""
+    country: str = ""
     competition: str = ""          # real league/cup name (not hardcoded)
     date: str = ""                 # YYYY-MM-DD
     goals: list[Goal] = field(default_factory=list)
@@ -224,6 +226,8 @@ class MatchMonitor:
             home_logo=home.get("logo", ""),
             away_logo=away.get("logo", ""),
             venue=(fx.get("venue") or {}).get("name", "") or "",
+            city=(fx.get("venue") or {}).get("city", "") or "",
+            country=league.get("country", "") or "",
             competition=league.get("name", "") or "",
             date=(fx.get("date", "") or "")[:10],
         )
