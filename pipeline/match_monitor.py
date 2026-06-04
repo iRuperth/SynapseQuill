@@ -68,6 +68,22 @@ class Match:
     def scoreline(self) -> str:
         return f"{self.home} {self.home_goals}-{self.away_goals} {self.away}"
 
+    @property
+    def winner(self) -> str | None:
+        """The winning team's name, or None on a draw / unknown score."""
+        if self.home_goals is None or self.away_goals is None:
+            return None
+        if self.home_goals > self.away_goals:
+            return self.home
+        if self.away_goals > self.home_goals:
+            return self.away
+        return None
+
+    @property
+    def is_draw(self) -> bool:
+        return (self.home_goals is not None and self.away_goals is not None
+                and self.home_goals == self.away_goals)
+
 
 class MatchMonitor:
     """Polls API-Football and yields newly-finished matches (idempotent)."""
