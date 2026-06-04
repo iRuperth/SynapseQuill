@@ -76,12 +76,19 @@ export default function Matches() {
         Por defecto se muestran los últimos partidos; puedes filtrar por fecha.
       </p>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', margin: '16px 0' }}>
-        <input type="date" value={day} onChange={(e) => setDay(e.target.value)}
-          style={inputStyle} placeholder="Filtrar por fecha (opcional)" />
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', margin: '16px 0' }}>
+        <label style={{ display: 'grid', gap: 4 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Filtrar por fecha (opcional)</span>
+          <input type="date" value={day} onChange={(e) => setDay(e.target.value)}
+            style={inputStyle} />
+        </label>
         {day && <button onClick={() => setDay('')} style={{ ...btnStyle, background: 'var(--bg-elevated)' }}>Ver últimos</button>}
         <button onClick={load} style={btnStyle}>Actualizar</button>
       </div>
+
+      <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: -4 }}>
+        {day ? `Mostrando partidos del ${day}` : 'Mostrando los últimos partidos finalizados'}
+      </p>
 
       {error && <div style={errorBox}>{error}</div>}
       {loading && <p>Cargando…</p>}
