@@ -16,9 +16,7 @@ from pathlib import Path
 from core.brand_config import BrandProfile
 
 from .match_monitor import Match
-
-# Reels / Shorts format: vertical 9:16.
-W, H = 1080, 1920
+from .video_format import REEL, VideoFormat
 
 
 def _font_path() -> str | None:
@@ -32,14 +30,16 @@ def _font_path() -> str | None:
     return None
 
 
-def _subtitle_clips(subtitles: list[dict], total: float):
+def _subtitle_clips(subtitles: list[dict], total: float, fmt: VideoFormat):
     """Karaoke-style captions: one YELLOW word at a time with a jump animation."""
     from moviepy import TextClip
 
     from .voice_generator import word_cues
 
     font = _font_path()
-    base_y = H - 470             # safe lower band, never clips the bottom edge
+    w, h = fmt.width, fmt.height
+    base_y = int(h * (0.76 if fmt.vertical else 0.80))   # safe lower band
+    font_size = int(min(w, h) * 0.078)
     clips = []
     for cue in word_cues(subtitles):
         start, end = min(cue["start"], total), min(cue["end"], total)
@@ -49,9 +49,9 @@ def _subtitle_clips(subtitles: list[dict], total: float):
         # method="caption" with a fixed width centres the word and wraps long
         # ones, so nothing ever gets clipped at the frame edges.
         txt = TextClip(
-            text=cue["text"].upper(), font=font, font_size=84,
+            text=cue["text"].upper(), font=font, font_size=font_size,
             color="yellow", stroke_color="black", stroke_width=5,
-            method="caption", size=(int(W * 0.92), None), text_align="center",
+            method="caption", size=(int(w * 0.92), None), text_align="center",
         ).with_start(start).with_duration(dur)
 
         # Jump animation: the word pops up a few px then settles (ease-out).
@@ -65,17 +65,20 @@ def _subtitle_clips(subtitles: list[dict], total: float):
 
 
 def assemble(cfg: BrandProfile, match: Match, images: list[Path],
-             audio_path: Path, subtitles: list[dict], metadata: dict) -> Path:
+             audio_path: Path, subtitles: list[dict], metadata: dict,
+             fmt: VideoFormat = REEL) -> Path:
     """Render the .mp4 and return its path.
 
     Animated broadcast graphics (crowd backdrop + crests + scoreboard + goal/card
     timeline) form the base; the crowd image is composited inside each frame
     (robust — no MoviePy masks), with narration audio and karaoke subtitles on top.
+    The output dimensions follow `fmt` (reel 9:16 or youtube 16:9).
     """
     from moviepy import AudioFileClip, CompositeVideoClip
     from moviepy.video.fx import CrossFadeIn
 
-    from .animated_graphics import build_animated_clips
+    from .animated_graphics import build_animated_clips, set_format
+    set_format(fmt)
 
     audio = AudioFileClip(str(audio_path))
     total = float(audio.duration)
@@ -97,8 +100,8 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
         graph.append(c)
         cursor += seg_len
 
-    layers = [*graph, *_subtitle_clips(subtitles, total)]
-    video = CompositeVideoClip(layers, size=(W, H)).with_audio(audio)
+    layers = [*graph, *_subtitle_clips(subtitles, total, fmt)]
+    video = CompositeVideoClip(layers, size=(fmt.width, fmt.height)).with_audio(audio)
 
     out = cfg.VIDEO_DIR / f"match_{match.fixture_id}.mp4"
     video.write_videofile(

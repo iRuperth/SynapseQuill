@@ -36,9 +36,12 @@ def run_match(profile_id: str, match: Match, *,
               check_cancel: CancelCb = _noop_cancel,
               do_video: bool = True,
               do_upload: bool = False,
-              do_social: bool = False) -> dict:
+              do_social: bool = False,
+              video_format: str = "reel") -> dict:
     """Run the full generation for one finished match. Returns a result dict."""
+    from .video_format import get_format
     cfg = BrandProfile(profile_id)
+    fmt = get_format(video_format)
     result: dict = {"fixture_id": match.fixture_id, "scoreline": match.scoreline}
 
     # --- 0. Enrich scorers (optional) --------------------------------
@@ -86,7 +89,7 @@ def run_match(profile_id: str, match: Match, *,
         try:
             on_step("media", "Collecting visuals (stock / graphics / flux)")
             from .media_provider import build_visuals
-            images = build_visuals(cfg, match, on_step=on_step)
+            images = build_visuals(cfg, match, fmt=fmt, on_step=on_step)
 
             on_step("voice", "Synthesising narration voice + subtitles")
             from .voice_generator import synthesize
@@ -94,7 +97,7 @@ def run_match(profile_id: str, match: Match, *,
 
             on_step("video", "Assembling .mp4")
             from .video_assembler import assemble
-            video_path = assemble(cfg, match, images, audio_path, subtitles, meta)
+            video_path = assemble(cfg, match, images, audio_path, subtitles, meta, fmt=fmt)
             result["video"] = str(video_path)
         except ImportError:
             on_step("video", "Video modules not available yet (Phase 2) — skipping")
