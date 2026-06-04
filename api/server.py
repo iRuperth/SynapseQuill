@@ -167,9 +167,38 @@ def get_matches(profile_id: str, day: str | None = None):
             "home_goals": m.home_goals, "away_goals": m.away_goals,
             "home_logo": m.home_logo, "away_logo": m.away_logo,
             "finished": m.is_finished, "scoreline": m.scoreline,
+            "competition": m.competition, "date": m.date,
         }
         for m in matches
     ]
+
+
+@app.get("/api/profiles/{profile_id}/matches/{fixture_id}")
+def get_match_detail(profile_id: str, fixture_id: str):
+    """Full detail of a single match: scorers, cards, venue, date."""
+    cfg = _profile_or_404(profile_id)
+    try:
+        source = get_data_source(cfg)
+        m = source.fixture(fixture_id)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {
+        "fixture_id": m.fixture_id, "status": m.status, "finished": m.is_finished,
+        "home": m.home, "away": m.away,
+        "home_goals": m.home_goals, "away_goals": m.away_goals,
+        "home_logo": m.home_logo, "away_logo": m.away_logo,
+        "scoreline": m.scoreline, "competition": m.competition,
+        "date": m.date, "venue": m.venue, "city": m.city, "country": m.country,
+        "goals": [
+            {"player": g.player, "team": g.team, "minute": g.minute,
+             "kind": g.kind, "description": g.description}
+            for g in m.goals
+        ],
+        "cards": [
+            {"player": c.player, "team": c.team, "minute": c.minute, "color": c.color}
+            for c in m.cards
+        ],
+    }
 
 
 @app.get("/api/profiles/{profile_id}/content")

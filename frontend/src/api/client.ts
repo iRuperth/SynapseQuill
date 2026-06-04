@@ -1,7 +1,7 @@
 // Single typed axios layer. Components call these functions directly.
 import axios from 'axios'
 import type {
-  ContentRecord, GenerationStatus, GlobalConfig, Match, Profile, ProfileSummary,
+  ContentRecord, GenerationStatus, GlobalConfig, Match, MatchDetail, Profile, ProfileSummary,
 } from '../types'
 
 const http = axios.create({ baseURL: '/api' })
@@ -23,6 +23,9 @@ export const updateProfile = (id: string, updates: Record<string, unknown>) =>
 
 export const getMatches = (id: string, day?: string) =>
   http.get<Match[]>(`/profiles/${id}/matches`, { params: { day } }).then((r) => r.data)
+
+export const getMatchDetail = (id: string, fixtureId: number) =>
+  http.get<MatchDetail>(`/profiles/${id}/matches/${fixtureId}`).then((r) => r.data)
 
 export const getContent = (id: string) =>
   http.get<ContentRecord[]>(`/profiles/${id}/content`).then((r) => r.data)

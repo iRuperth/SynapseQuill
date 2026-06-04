@@ -50,6 +50,31 @@ export interface Match {
   away_logo: string
   finished: boolean
   scoreline: string
+  competition?: string
+  date?: string
+}
+
+export interface MatchGoal {
+  player: string
+  team: string
+  minute: string
+  kind: string
+  description: string
+}
+
+export interface MatchCard {
+  player: string
+  team: string
+  minute: string
+  color: string
+}
+
+export interface MatchDetail extends Match {
+  venue: string
+  city: string
+  country: string
+  goals: MatchGoal[]
+  cards: MatchCard[]
 }
 
 export interface ContentRecord {

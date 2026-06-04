@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { cancelGeneration, generate, getMatches, getStatus } from '../api/client'
+import { cancelGeneration, generate, getMatchDetail, getMatches, getStatus } from '../api/client'
 import { useProfile } from '../components/useProfile'
-import type { GenerationStatus, Match } from '../types'
+import type { GenerationStatus, Match, MatchDetail } from '../types'
 
 // Friendly Spanish label for each pipeline step.
 const STEP_LABEL: Record<string, string> = {
@@ -128,25 +128,8 @@ export default function Matches() {
 
       <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
         {matches.map((m) => (
-          <div key={m.fixture_id} style={cardStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {m.home_logo && <img src={m.home_logo} alt="" width={24} height={24} />}
-              <strong>{m.home}</strong>
-              <span style={{ color: 'var(--accent)' }}>
-                {m.home_goals ?? '-'} : {m.away_goals ?? '-'}
-              </span>
-              <strong>{m.away}</strong>
-              {m.away_logo && <img src={m.away_logo} alt="" width={24} height={24} />}
-              <span style={statusPill(m.finished)}>{m.status}</span>
-            </div>
-            <button
-              disabled={!m.finished || busy}
-              onClick={() => onGenerate(m)}
-              style={{ ...btnStyle, opacity: !m.finished || busy ? 0.5 : 1 }}
-            >
-              Generar vídeo
-            </button>
-          </div>
+          <MatchRow key={m.fixture_id} profileId={active} match={m}
+            busy={busy} onGenerate={onGenerate} />
         ))}
         {!loading && !matches.length && !error && (
           <p style={{ color: 'var(--text-muted)' }}>No hay partidos ese día.</p>
@@ -156,6 +139,102 @@ export default function Matches() {
   )
 }
 
+function MatchRow({ profileId, match: m, busy, onGenerate }: {
+  profileId: string; match: Match; busy: boolean; onGenerate: (m: Match) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [detail, setDetail] = useState<MatchDetail | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function toggle() {
+    const next = !open
+    setOpen(next)
+    if (next && !detail) {
+      setLoading(true)
+      try {
+        setDetail(await getMatchDetail(profileId, m.fixture_id))
+      } catch { /* ignore */ } finally { setLoading(false) }
+    }
+  }
+
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
+      {/* Clickable header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px' }}>
+        <button onClick={toggle} style={{
+          display: 'flex', alignItems: 'center', gap: 10, background: 'none',
+          border: 'none', color: 'var(--text)', cursor: 'pointer', textAlign: 'left', flex: 1,
+        }}>
+          <span style={{ color: 'var(--text-muted)', width: 14 }}>{open ? '▾' : '▸'}</span>
+          {m.home_logo && <img src={m.home_logo} alt="" width={24} height={24} />}
+          <strong>{m.home}</strong>
+          <span style={{ color: 'var(--accent)' }}>{m.home_goals ?? '-'} : {m.away_goals ?? '-'}</span>
+          <strong>{m.away}</strong>
+          {m.away_logo && <img src={m.away_logo} alt="" width={24} height={24} />}
+          <span style={statusPill(m.finished)}>{m.status}</span>
+        </button>
+        <button disabled={!m.finished || busy} onClick={() => onGenerate(m)}
+          style={{ ...btnStyle, opacity: !m.finished || busy ? 0.5 : 1, marginLeft: 12 }}>
+          Generar vídeo
+        </button>
+      </div>
+
+      {/* Expandable detail */}
+      {open && (
+        <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--border)' }}>
+          {loading && <p style={{ color: 'var(--text-muted)' }}>Cargando detalle…</p>}
+          {detail && (
+            <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                {detail.competition} · {detail.date}
+                {detail.venue && ` · ${detail.venue}`}
+                {detail.city && `, ${detail.city}`}
+              </div>
+
+              {detail.goals.length > 0 && (
+                <div>
+                  <div style={sectionTitle}>⚽ Goles</div>
+                  {detail.goals.map((g, i) => (
+                    <div key={i} style={{ fontSize: 14, padding: '3px 0' }}>
+                      <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{g.minute}'</span>{' '}
+                      <strong>{g.player}</strong> <span style={{ color: 'var(--text-muted)' }}>({g.team})</span>
+                      {g.kind !== 'Normal Goal' && <em style={{ color: 'var(--text-muted)' }}> · {g.kind}</em>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {detail.cards.length > 0 && (
+                <div>
+                  <div style={sectionTitle}>🟨 Tarjetas</div>
+                  {detail.cards.map((c, i) => (
+                    <div key={i} style={{ fontSize: 14, padding: '3px 0' }}>
+                      <span style={{
+                        display: 'inline-block', width: 12, height: 16, borderRadius: 2, marginRight: 6,
+                        background: c.color === 'Red' ? '#ef4444' : '#facc15', verticalAlign: 'middle',
+                      }} />
+                      <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{c.minute}'</span>{' '}
+                      {c.player} <span style={{ color: 'var(--text-muted)' }}>({c.team})</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!detail.goals.length && !detail.cards.length && (
+                <p style={{ color: 'var(--text-muted)' }}>Sin goles ni tarjetas registrados.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const sectionTitle: React.CSSProperties = {
+  fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4, letterSpacing: 0.3,
+}
+
 const inputStyle: React.CSSProperties = {
   padding: '8px 10px', borderRadius: 8, background: 'var(--bg-elevated)',
   color: 'var(--text)', border: '1px solid var(--border)',
@@ -163,11 +242,6 @@ const inputStyle: React.CSSProperties = {
 const btnStyle: React.CSSProperties = {
   padding: '8px 14px', borderRadius: 8, background: 'var(--accent-2)',
   color: 'white', border: 'none', cursor: 'pointer', fontWeight: 600,
-}
-const cardStyle: React.CSSProperties = {
-  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  padding: '14px 16px', background: 'var(--bg-surface)',
-  border: '1px solid var(--border)', borderRadius: 12,
 }
 const errorBox: React.CSSProperties = {
   padding: 12, background: '#3a1f2a', border: '1px solid #7a3650',
