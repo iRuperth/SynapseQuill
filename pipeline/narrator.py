@@ -31,21 +31,33 @@ def _facts_block(match: Match) -> str:
     ]
     if match.venue:
         lines.append(f"Venue: {match.venue}")
-    if match.goals:
-        lines.append("Goals (in order):")
-        for g in match.goals:
-            extra = "" if g.kind == "Normal Goal" else f" ({g.kind})"
-            lines.append(f"  - minute {g.minute}: goal for {g.team}, scored by "
-                         f"{g.player}{extra}")
-            if g.description:
-                lines.append(f"      how it happened: {g.description}")
+    # Build ONE chronological list of every event (goals AND cards together),
+    # so the narration can run through the match minute by minute.
+    def _min(s):
+        try:
+            return int(str(s).split("+")[0])
+        except ValueError:
+            return 999
+
+    events = []
+    for g in match.goals:
+        kind = "penalty goal" if "Pen" in g.kind else (
+            "own goal" if "Own" in g.kind else "goal")
+        line = f"minute {g.minute}: {kind} for {g.team}, scored by {g.player}"
+        if g.description:
+            line += f" — {g.description}"
+        events.append((_min(g.minute), line))
+    for c in match.cards:
+        events.append((_min(c.minute),
+                       f"minute {c.minute}: {c.color} card for {c.player} of {c.team}"))
+
+    if events:
+        events.sort(key=lambda e: e[0])
+        lines.append("Match events in chronological order (narrate ALL of them, in this order):")
+        for _, line in events:
+            lines.append(f"  - {line}")
     else:
-        lines.append("Goals: none scored (0-0).")
-    if match.cards:
-        lines.append("Cards:")
-        for c in match.cards:
-            lines.append(f"  - minute {c.minute}: {c.color} card for {c.player} "
-                         f"of {c.team}")
+        lines.append("No goals or cards (0-0).")
     return "\n".join(lines)
 
 
@@ -78,9 +90,12 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         "(in Spanish: '¡GOOOOOL!', '¡QUÉ GOLAZO!', '¡INCREÍBLE!'; in English: 'GOOOAL!', 'WHAT A STRIKE!').\n"
         "- Put the most intense words in CAPITALS for emphasis.\n"
         "- When 'how it happened' is given for a goal, describe the play vividly using it.\n"
-        "- Mention the stadium and the drama of cards if present.\n"
+        "- Go through the match EVENT BY EVENT in the given chronological order — "
+        "narrate EVERY card AND every goal as they happen, e.g. 'minuto 4, tarjeta amarilla; "
+        "minuto 6, roja y penalti que termina en gol de Cristiano Ronaldo; minuto 29, amarilla "
+        "para Jorge López...'. Do not skip cards.\n"
         "- NEVER read team names in parentheses. Say them naturally — e.g. "
-        "'gol del Girona, obra de Germán Martínez' or 'Germán Martínez marca para el Girona', "
+        "'gol del Girona, obra de Germán Martínez' or 'amarilla para Casemiro, del Real Madrid', "
         "never 'Germán Martínez (Girona)'.\n"
         "- End with an epic closing line about the result.\n"
         "STRICT: use ONLY the provided facts — never invent scorers, minutes, scores or plays. "
