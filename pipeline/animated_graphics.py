@@ -248,16 +248,96 @@ def timeline_clip(match: Match, language: str, duration: float):
     return VideoClip(make, duration=duration)
 
 
+# ── Unified frame: scoreboard (top) + event timeline (bottom), one screen ──
+def _unified_frame(match: Match, language: str, p: float):
+    """Everything on ONE screen for the whole video: compact scoreboard at the
+    top, then goals + cards revealed in chronological order below. The crowd
+    backdrop is baked in, so it never disappears (single continuous clip)."""
+    img = _canvas().convert("RGBA")
+    d = ImageDraw.Draw(img)
+
+    # Header.
+    header = (match.competition or "").upper() or "FÚTBOL"
+    _center(d, header, _sy(0.06), _font(_fs(0.034)), _MUTED)
+    if match.date:
+        _center(d, match.date, _sy(0.095), _font(_fs(0.024)), _MUTED)
+
+    # Crests above the score.
+    home_crest, away_crest = _crest(match.home_logo), _crest(match.away_logo)
+    home_cx, away_cx = _sx(0.30), _sx(0.70)
+    if home_crest:
+        img.alpha_composite(home_crest, (home_cx - home_crest.width // 2, _sy(0.135)))
+    if away_crest:
+        img.alpha_composite(away_crest, (away_cx - away_crest.width // 2, _sy(0.135)))
+
+    # Score counts up over the first 25% of the clip.
+    grow = _ease(min(p / 0.25, 1.0))
+    hg = round((match.home_goals or 0) * grow)
+    ag = round((match.away_goals or 0) * grow)
+    big = _font(_fs(0.095))
+    _center_at(d, str(hg), home_cx, _sy(0.205), big, _ACCENT)
+    _center(d, "-", _sy(0.235), _font(_fs(0.07)), _MUTED)
+    _center_at(d, str(ag), away_cx, _sy(0.205), big, _ACCENT)
+
+    # Team names + accent bar.
+    _center(d, f"{match.home.upper()}  -  {match.away.upper()}",
+            _sy(0.315), _font(_fs(0.028)), _TEXT)
+    bar_w = int(W * 0.55)
+    d.rectangle([(W - bar_w) // 2, _sy(0.365), (W + bar_w) // 2, _sy(0.365) + max(4, _sy(0.004))],
+                fill=_ACCENT2)
+
+    # Chronological events: goals + cards together, revealed one by one.
+    events = []
+    for g in match.goals:
+        kind = "penalty" if "Pen" in g.kind else "goal"
+        events.append((_minute_num(g.minute), g.minute, kind, g.player, g.team))
+    for c in match.cards:
+        events.append((_minute_num(c.minute), c.minute, c.color.lower(), c.player, c.team))
+    events.sort(key=lambda e: e[0])
+    events = events[:11]
+
+    if events:
+        _center(d, "MINUTO A MINUTO" if language == "es" else "TIMELINE",
+                _sy(0.41), _font(_fs(0.026)), _ACCENT)
+        reveal_each = 1.0 / len(events)
+        row_font = _font(_fs(0.026))
+        box_w, box_h = _fs(0.024), _fs(0.032)
+        row_h = _sy(0.046)
+        y = _sy(0.46)
+        for i, (_, minute, kind, player, _team) in enumerate(events):
+            local = (p - i * reveal_each) / reveal_each
+            if local <= 0:
+                continue
+            e = _ease(min(local, 1.0))
+            x = _sx(0.08) + int((1 - e) * _sx(0.22))
+            shade = tuple(int(_MUTED[k] + (_TEXT[k] - _MUTED[k]) * e) for k in range(3))
+            box_color = (_YELLOW if kind == "yellow" else _RED if kind == "red" else _ACCENT)
+            d.rectangle([x, y + 3, x + box_w, y + box_h], fill=box_color)
+            icon = {"yellow": "Y", "red": "R", "penalty": "P"}.get(kind, "")
+            if icon:
+                d.text((x + box_w * 0.28, y + 3), icon, font=_font(_fs(0.02)), fill=(20, 20, 20))
+            label = f"{minute}'  {player}"
+            d.text((x + box_w + _sx(0.018), y), label, font=row_font, fill=shade)
+            y += row_h
+    return img
+
+
+def unified_clip(match: Match, language: str, duration: float):
+    import numpy as np
+    from moviepy import VideoClip
+
+    def make(t):
+        return np.array(_unified_frame(match, language, min(t / duration, 1.0)).convert("RGB"))
+
+    return VideoClip(make, duration=duration)
+
+
 def build_animated_clips(cfg: BrandProfile, match: Match, total: float,
                          background=None) -> list:
-    """Return animated MoviePy clips spanning `total` seconds.
+    """Return ONE animated clip with everything on a single screen.
 
-    `background` (optional path) is composited into every frame as a darkened
-    crowd backdrop — robust, no MoviePy masks (avoids corrupt mp4s).
+    A single continuous clip (no scene switch) means the crowd backdrop never
+    disappears mid-video, and the marker shows score + all goals/cards together.
     """
     set_background(background)
-    if match.goals or match.cards:
-        sb = total * 0.45
-        tl = total - sb
-        return [scoreboard_clip(match, sb), timeline_clip(match, cfg.LANGUAGE, tl)]
-    return [scoreboard_clip(match, total)]
+    return [unified_clip(match, cfg.LANGUAGE, total)]
