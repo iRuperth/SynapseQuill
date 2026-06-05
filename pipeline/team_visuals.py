@@ -84,13 +84,20 @@ def team_seed(team: str) -> int:
     return zlib.crc32(team.encode("utf-8")) % 1_000_000
 
 
+# Appended to every prompt: FLUX renders garbled text/letters, so forbid them
+# strongly. Banners are described as plain colour blocks, never with words.
+_NO_TEXT = ("absolutely NO text, NO letters, NO words, NO numbers, NO writing, "
+            "NO banners with text, NO logos, NO crests, NO brand names, "
+            "plain coloured flags and scarves only")
+
+
 def crowd_prompt(team: str, visual_style: str, vertical: bool = True) -> str:
     """Build a FLUX prompt for a packed crowd in `team`'s colours."""
     comp = "vertical 9:16 composition" if vertical else "wide 16:9 composition"
     return (
-        f"{visual_style}, huge jubilant crowd of {palette(team)} cheering in a "
-        f"packed stadium at night, flares and confetti, vibrant colours, "
-        f"{comp}, no readable text, no logos, no crests"
+        f"{visual_style}, photorealistic huge jubilant crowd of {palette(team)} "
+        f"cheering in a packed stadium at night, flares and confetti, vibrant "
+        f"colours, {comp}, {_NO_TEXT}"
     )
 
 
@@ -98,7 +105,7 @@ def generic_crowd_prompt(visual_style: str, vertical: bool = True) -> str:
     """Fallback prompt for draws / unknown teams (the previous generic crowd)."""
     comp = "vertical 9:16 composition" if vertical else "wide 16:9 composition"
     return (
-        f"{visual_style}, huge crowd of football fans wearing team jerseys and "
-        f"scarves cheering in a packed stadium at night, flares and confetti, "
-        f"vibrant colours, energetic celebration, {comp}, no readable text"
+        f"{visual_style}, photorealistic huge crowd of football fans in plain "
+        f"coloured jerseys and scarves cheering in a packed stadium at night, "
+        f"flares and confetti, vibrant colours, {comp}, {_NO_TEXT}"
     )
