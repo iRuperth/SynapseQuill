@@ -30,38 +30,46 @@ def _font_path() -> str | None:
     return None
 
 
+def _ease_out(t: float) -> float:
+    return 1 - (1 - t) ** 3
+
+
 def _subtitle_clips(subtitles: list[dict], total: float, fmt: VideoFormat):
-    """Karaoke-style captions: one YELLOW word at a time with a jump animation."""
+    """MrBeast-style captions: one big BOLD word at a time, thick black outline,
+    bright yellow, with a soft pop-in (scale + fade) instead of a hard jump."""
     from moviepy import TextClip
 
     from .voice_generator import word_cues
 
     font = _font_path()
     w, h = fmt.width, fmt.height
-    base_y = int(h * (0.74 if fmt.vertical else 0.78))   # safe lower band
-    font_size = int(min(w, h) * 0.062)                   # smaller so it never clips
-    box_h = int(font_size * 2.0)                          # tall box: vertical padding
+    base_y = int(h * (0.72 if fmt.vertical else 0.76))
+    font_size = int(min(w, h) * 0.072)                   # big, MrBeast-like
+    box_h = int(font_size * 2.2)                          # vertical padding
     clips = []
     for cue in word_cues(subtitles):
         start, end = min(cue["start"], total), min(cue["end"], total)
         if end <= start:
             continue
         dur = end - start
-        # Fixed width+height box, centred text: the extra height gives vertical
-        # padding so the word is never clipped top/bottom, even with the bounce.
+        # Bright yellow, THICK black outline for that bold caption look.
         txt = TextClip(
             text=cue["text"].upper(), font=font, font_size=font_size,
-            color="yellow", stroke_color="black", stroke_width=4,
-            method="caption", size=(int(w * 0.9), box_h), text_align="center",
+            color="#FFE600", stroke_color="black", stroke_width=int(font_size * 0.13),
+            method="caption", size=(int(w * 0.92), box_h), text_align="center",
         ).with_start(start).with_duration(dur)
 
-        # Gentle jump that settles quickly and never leaves the safe band.
-        def _pos(t, _y=base_y, _d=dur):
-            prog = min(t / max(_d * 0.35, 0.01), 1.0)
-            jump = int(14 * (1 - prog) ** 2)
-            return ("center", _y - jump)
+        # Soft pop-in: scale 86%→100% over the first ~18% (no bounce), plus a
+        # short fade-in. Smooth and clean.
+        def _scale(t, _d=dur):
+            prog = min(t / max(_d * 0.18, 0.01), 1.0)
+            return 0.86 + 0.14 * _ease_out(prog)
 
-        clips.append(txt.with_position(_pos))
+        from moviepy.video.fx import CrossFadeIn
+        txt = (txt.resized(_scale)
+               .with_position(("center", base_y))
+               .with_effects([CrossFadeIn(min(0.15, dur * 0.4))]))
+        clips.append(txt)
     return clips
 
 
