@@ -1,10 +1,11 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, ListVideo, Settings, Trophy } from 'lucide-react'
+import { CalendarDays, LayoutDashboard, ListVideo, Settings, Trophy } from 'lucide-react'
 import { useProfile } from './useProfile'
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/matches', label: 'Partidos', icon: Trophy, end: false },
+  { to: '/calendar', label: 'Calendario', icon: CalendarDays, end: false },
   { to: '/library', label: 'Biblioteca', icon: ListVideo, end: false },
   { to: '/settings', label: 'Ajustes', icon: Settings, end: false },
 ]

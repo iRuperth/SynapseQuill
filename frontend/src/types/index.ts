@@ -39,6 +39,33 @@ export interface VoiceOption {
   language: string
 }
 
+export interface CalendarMatch {
+  team1: string
+  team2: string
+  time: string
+  group: string
+  round: string
+  ground: string
+}
+
+export interface CalendarDay {
+  date: string
+  phase: string
+  count: number
+  matches: CalendarMatch[]
+}
+
+export interface CalendarSummary {
+  total_matches: number
+  total_days: number
+  start: string
+  end: string
+  next_match_day: string | null
+  next_match_day_count: number
+  days_until_next: number | null
+  days: CalendarDay[]
+}
+
 export interface Match {
   fixture_id: number
   status: string

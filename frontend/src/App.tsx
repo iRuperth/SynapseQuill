@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard'
 import Matches from './pages/Matches'
 import Library from './pages/Library'
 import Settings from './pages/Settings'
+import Calendar from './pages/Calendar'
 
 export default function App() {
   return (
@@ -11,6 +12,7 @@ export default function App() {
       <Route path="/" element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="matches" element={<Matches />} />
+        <Route path="calendar" element={<Calendar />} />
         <Route path="library" element={<Library />} />
         <Route path="settings" element={<Settings />} />
       </Route>

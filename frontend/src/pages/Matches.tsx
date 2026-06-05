@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { cancelGeneration, generate, getMatchDetail, getMatches, getStatus } from '../api/client'
+import { cancelGeneration, generate, generateDigest, getMatchDetail, getMatches, getStatus } from '../api/client'
 import { useProfile } from '../components/useProfile'
 import type { GenerationStatus, Match, MatchDetail } from '../types'
 
@@ -27,6 +27,7 @@ export default function Matches() {
   const [error, setError] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<GenerationStatus>({ state: 'idle' })
+  const [format, setFormat] = useState<string>('reel')
   const poll = useRef<number | null>(null)
 
   async function load() {
@@ -62,7 +63,14 @@ export default function Matches() {
   async function onGenerate(m: Match) {
     if (!active) return
     setStatus({ state: 'running', step: 'start', message: 'Iniciando...' })
-    await generate(active, m.fixture_id, { do_video: true, do_upload: false })
+    await generate(active, m.fixture_id, { do_video: true, do_upload: false, format })
+    startPolling()
+  }
+
+  async function onDigest() {
+    if (!active) return
+    setStatus({ state: 'running', step: 'start', message: 'Preparando resumen del día...' })
+    await generateDigest(active, { day: day || undefined, format })
     startPolling()
   }
 
@@ -76,18 +84,30 @@ export default function Matches() {
         Por defecto se muestran los últimos partidos; puedes filtrar por fecha.
       </p>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', margin: '16px 0' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', margin: '16px 0', flexWrap: 'wrap' }}>
         <label style={{ display: 'grid', gap: 4 }}>
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Filtrar por fecha (opcional)</span>
           <input type="date" value={day} onChange={(e) => setDay(e.target.value)}
             style={inputStyle} />
         </label>
+        <label style={{ display: 'grid', gap: 4 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Formato</span>
+          <select value={format} onChange={(e) => setFormat(e.target.value)} style={inputStyle}>
+            <option value="reel">Reel (vertical, &lt;3 min)</option>
+            <option value="youtube">YouTube (horizontal, 5-8 min)</option>
+          </select>
+        </label>
         {day && <button onClick={() => setDay('')} style={{ ...btnStyle, background: 'var(--bg-elevated)' }}>Ver últimos</button>}
         <button onClick={load} style={btnStyle}>Actualizar</button>
+        <button onClick={onDigest} disabled={busy}
+          style={{ ...btnStyle, background: 'var(--accent)', color: '#04201c', opacity: busy ? 0.5 : 1 }}>
+          🎬 Resumen del día
+        </button>
       </div>
 
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: -4 }}>
         {day ? `Mostrando partidos del ${day}` : 'Mostrando los últimos partidos finalizados'}
+        {' · '}El <strong>Resumen del día</strong> junta todos los partidos {day ? `del ${day}` : 'del último día'} en un vídeo.
       </p>
 
       {error && <div style={errorBox}>{error}</div>}

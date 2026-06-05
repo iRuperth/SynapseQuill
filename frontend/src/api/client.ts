@@ -1,6 +1,7 @@
 // Single typed axios layer. Components call these functions directly.
 import axios from 'axios'
 import type {
+  CalendarSummary,
   ContentRecord, GenerationStatus, GlobalConfig, Match, MatchDetail, Profile, ProfileSummary,
 } from '../types'
 
@@ -30,12 +31,23 @@ export const getMatchDetail = (id: string, fixtureId: number) =>
 export const getContent = (id: string) =>
   http.get<ContentRecord[]>(`/profiles/${id}/content`).then((r) => r.data)
 
-export const generate = (id: string, fixtureId: number, opts?: { do_video?: boolean; do_upload?: boolean }) =>
+export const generate = (id: string, fixtureId: number,
+  opts?: { do_video?: boolean; do_upload?: boolean; format?: string }) =>
   http.post(`/profiles/${id}/generate`, {
     fixture_id: fixtureId,
     do_video: opts?.do_video ?? true,
     do_upload: opts?.do_upload ?? false,
+    format: opts?.format ?? 'reel',
   }).then((r) => r.data)
+
+export const generateDigest = (id: string, opts?: { day?: string; format?: string }) =>
+  http.post(`/profiles/${id}/digest`, {
+    day: opts?.day ?? null,
+    format: opts?.format ?? 'reel',
+  }).then((r) => r.data)
+
+export const getWorldCupCalendar = () =>
+  http.get<CalendarSummary>('/worldcup/calendar').then((r) => r.data)
 
 export const getStatus = (id: string) =>
   http.get<GenerationStatus>(`/profiles/${id}/status`).then((r) => r.data)
