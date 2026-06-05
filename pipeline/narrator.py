@@ -52,7 +52,9 @@ def _facts_block(match: Match) -> str:
 # Word-length guidance per narration style.
 _LENGTH = {
     "full": "90-150 words.",
-    "digest_short": "STRICTLY 40-60 words — this is one match in a daily digest, keep it tight.",
+    "digest_short": "VERY SHORT: 30-45 words MAXIMUM — this is one match in a fast daily "
+                    "digest. One punchy line on the result and the key goal(s). Do not list "
+                    "every detail.",
     "digest_long": "150-220 words with more detail and context — this is one match in a "
                    "longer YouTube digest.",
 }

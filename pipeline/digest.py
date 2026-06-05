@@ -24,14 +24,18 @@ from .video_format import get_format
 StepCb = Callable[[str, str], None]
 CancelCb = Callable[[], bool]
 
-# Per-format target seconds per match and overall cap.
-_REEL_PER_MATCH = 25
-_REEL_CAP = 180          # 3 minutes
-_YT_PER_MATCH = 70
+# Per-format limits.
+_REEL_MAX_MATCHES = 6    # 6 x ~28s ≈ under 3 minutes
+_REEL_MAX_SEG = 28       # hard cap per segment (seconds)
+_YT_MAX_SEG = 90         # generous cap for the long format
 
 
-def _segment_clip(cfg, match: Match, narration: str, fmt, on_step):
-    """Build one match segment: voiced animated graphics over the winner crowd."""
+def _segment_clip(cfg, match: Match, narration: str, fmt, seg_cap: float, on_step):
+    """Build one match segment: voiced animated graphics over the winner crowd.
+
+    The audio (and thus the segment) is hard-capped at `seg_cap` seconds so the
+    whole digest stays within its target length.
+    """
     from moviepy import AudioFileClip, CompositeVideoClip
 
     from .animated_graphics import build_animated_clips, set_format
@@ -44,16 +48,16 @@ def _segment_clip(cfg, match: Match, narration: str, fmt, on_step):
     backdrop = str(images[0]) if images else None
     audio_path, subtitles = synthesize(cfg, narration, name=f"seg_{match.fixture_id}")
     audio = AudioFileClip(str(audio_path))
-    total = float(audio.duration)
+    total = min(float(audio.duration), seg_cap)
+    if audio.duration > seg_cap:
+        audio = audio.subclipped(0, seg_cap)
 
+    # Butt-join scoreboard + timeline (no crossfade) so the crowd backdrop, baked
+    # into every frame, stays whole — no black flash between scenes.
     anim = build_animated_clips(cfg, match, total, background=backdrop)
-    from moviepy.video.fx import CrossFadeIn
     graph, cursor, seg = [], 0.0, total / max(len(anim), 1)
-    for i, clip in enumerate(anim):
-        c = clip.with_start(cursor)
-        if i > 0:
-            c = c.with_effects([CrossFadeIn(0.4)])
-        graph.append(c)
+    for clip in anim:
+        graph.append(clip.with_start(cursor))
         cursor += seg
     layers = [*graph, *_subtitle_clips(subtitles, total, fmt)]
     return CompositeVideoClip(layers, size=(fmt.width, fmt.height)).with_audio(audio), total
@@ -64,7 +68,6 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
                      check_cancel: CancelCb = lambda: False) -> dict:
     """Generate a digest of all finished matches on `day`. Returns a result dict."""
     from moviepy import concatenate_videoclips
-    from moviepy.video.fx import CrossFadeIn
 
     from .data_sources import get_data_source
 
@@ -79,8 +82,9 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
 
     # Cap how many matches fit for the reel (3 min / 25s ≈ 6).
     if fmt.key == "reel":
-        finished = finished[: max(1, _REEL_CAP // _REEL_PER_MATCH)]
+        finished = finished[:_REEL_MAX_MATCHES]
     style = "digest_short" if fmt.key == "reel" else "digest_long"
+    seg_cap = _REEL_MAX_SEG if fmt.key == "reel" else _YT_MAX_SEG
 
     segments, used, all_tags = [], [], []
     for i, m in enumerate(finished):
@@ -91,14 +95,16 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         narration = narrate(full, language=cfg.LANGUAGE,
                             system_preamble=cfg.system_preamble,
                             provider=cfg.LLM_PROVIDER, style=style)
-        clip, dur = _segment_clip(cfg, full, narration, fmt, on_step)
+        clip, dur = _segment_clip(cfg, full, narration, fmt, seg_cap, on_step)
         segments.append(clip)
         used.append({"scoreline": full.scoreline, "duration": round(dur, 1)})
         all_tags += build_tags(full)
 
     on_step("video", "Stitching the digest")
-    faded = [segments[0]] + [s.with_effects([CrossFadeIn(0.5)]) for s in segments[1:]]
-    digest = concatenate_videoclips(faded, method="compose", padding=-0.5)
+    # Direct cut between segments (no crossfade): each segment carries its own
+    # crowd backdrop, so a crossfade would briefly show black. A hard cut keeps
+    # every frame's image whole.
+    digest = concatenate_videoclips(segments, method="compose")
 
     out = cfg.VIDEO_DIR / f"digest_{day}_{fmt.key}.mp4"
     digest.write_videofile(str(out), fps=24, codec="libx264", audio_codec="aac",
