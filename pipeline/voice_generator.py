@@ -12,9 +12,20 @@ Returns (audio_path, subtitles) where subtitles is a list of
 """
 
 import asyncio
+import re
 from pathlib import Path
 
 from core.brand_config import BrandProfile
+
+
+def _collapse_stretched(text: str) -> str:
+    """Collapse 3+ repeated letters to a single one (GOOOL -> GOL, siiii -> si).
+
+    Edge-TTS reads stretched vowels as separate syllables ('Go-ol'), which sounds
+    unnatural, so we normalise them before synthesis. Subtitles use the raw text,
+    so only the spoken audio is affected.
+    """
+    return re.sub(r"(.)\1{2,}", r"\1", text)
 
 
 def _is_high_energy(text: str) -> bool:
@@ -83,9 +94,12 @@ def synthesize(cfg: BrandProfile, text: str, name: str = "narration") -> tuple[P
     audio_path = cfg.IMAGE_DIR.parent / f"{name}.mp3"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Normalise stretched letters (GOOOL -> GOL) so the voice sounds natural.
+    text = _collapse_stretched(text)
+
     rate, pitch = cfg.TTS_RATE, getattr(cfg, "TTS_PITCH", "+0Hz")
     # Goal-shout boost: Edge-TTS has no emotional styles, so when the narration
-    # is full of shouts (¡GOOOL!, lots of CAPS/exclamations) lift the whole
+    # is full of shouts (¡GOL!, lots of CAPS/exclamations) lift the whole
     # track's energy a notch — it reads more like a real play-by-play.
     if _is_high_energy(text):
         rate = _bump(rate, 6)
