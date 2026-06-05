@@ -34,8 +34,9 @@ def _facts_block(match: Match) -> str:
     if match.goals:
         lines.append("Goals (in order):")
         for g in match.goals:
-            extra = "" if g.kind == "Normal Goal" else f" [{g.kind}]"
-            lines.append(f"  - {g.minute}' {g.player} ({g.team}){extra}")
+            extra = "" if g.kind == "Normal Goal" else f" ({g.kind})"
+            lines.append(f"  - minute {g.minute}: goal for {g.team}, scored by "
+                         f"{g.player}{extra}")
             if g.description:
                 lines.append(f"      how it happened: {g.description}")
     else:
@@ -43,7 +44,8 @@ def _facts_block(match: Match) -> str:
     if match.cards:
         lines.append("Cards:")
         for c in match.cards:
-            lines.append(f"  - {c.minute}' {c.color} card, {c.player} ({c.team})")
+            lines.append(f"  - minute {c.minute}: {c.color} card for {c.player} "
+                         f"of {c.team}")
     return "\n".join(lines)
 
 
@@ -75,6 +77,9 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         "- Put the most intense words in CAPITALS for emphasis.\n"
         "- When 'how it happened' is given for a goal, describe the play vividly using it.\n"
         "- Mention the stadium and the drama of cards if present.\n"
+        "- NEVER read team names in parentheses. Say them naturally — e.g. "
+        "'gol del Girona, obra de Germán Martínez' or 'Germán Martínez marca para el Girona', "
+        "never 'Germán Martínez (Girona)'.\n"
         "- End with an epic closing line about the result.\n"
         "STRICT: use ONLY the provided facts — never invent scorers, minutes, scores or plays. "
         f"{length} Output ONLY the spoken script: no headings, markdown, hashtags or stage directions."
