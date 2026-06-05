@@ -47,9 +47,13 @@ def _gtts(text: str, language: str, audio_path: Path) -> list[dict]:
     return []
 
 
-def synthesize(cfg: BrandProfile, text: str) -> tuple[Path, list[dict]]:
-    """Synthesize narration audio + subtitle cues for a profile."""
-    audio_path = cfg.IMAGE_DIR.parent / "narration.mp3"
+def synthesize(cfg: BrandProfile, text: str, name: str = "narration") -> tuple[Path, list[dict]]:
+    """Synthesize narration audio + subtitle cues for a profile.
+
+    `name` lets callers (e.g. the daily digest) write distinct files per segment
+    so concurrent/sequential segments don't overwrite each other's audio.
+    """
+    audio_path = cfg.IMAGE_DIR.parent / f"{name}.mp3"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
 
     provider = cfg.TTS_PROVIDER

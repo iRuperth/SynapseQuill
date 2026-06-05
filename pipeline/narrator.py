@@ -47,10 +47,24 @@ def _facts_block(match: Match) -> str:
     return "\n".join(lines)
 
 
+# Word-length guidance per narration style.
+_LENGTH = {
+    "full": "90-150 words.",
+    "digest_short": "STRICTLY 40-60 words — this is one match in a daily digest, keep it tight.",
+    "digest_long": "150-220 words with more detail and context — this is one match in a "
+                   "longer YouTube digest.",
+}
+
+
 def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
-            provider: str | None = None) -> str:
-    """Return an exciting narration script for `match` in the given language."""
+            provider: str | None = None, style: str = "full") -> str:
+    """Return an exciting narration script for `match`.
+
+    style: full (single-match reel) | digest_short (~20s segment) |
+    digest_long (detailed YouTube segment).
+    """
     lang = _LANG_NAME.get(language, "Spanish")
+    length = _LENGTH.get(style, _LENGTH["full"])
 
     system = (system_preamble + "\n\n" if system_preamble else "") + (
         f"You are a CLASSIC, passionate football play-by-play commentator. Write ONLY in {lang}. "
@@ -63,7 +77,7 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         "- Mention the stadium and the drama of cards if present.\n"
         "- End with an epic closing line about the result.\n"
         "STRICT: use ONLY the provided facts — never invent scorers, minutes, scores or plays. "
-        "90-150 words. Output ONLY the spoken script: no headings, markdown, hashtags or stage directions."
+        f"{length} Output ONLY the spoken script: no headings, markdown, hashtags or stage directions."
     )
 
     user = (
