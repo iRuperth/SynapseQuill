@@ -71,6 +71,12 @@ class GenerateRequest(BaseModel):
     do_video: bool = True
     do_upload: bool = False
     do_social: bool = False
+    format: str = "reel"          # reel | youtube
+
+
+class DigestRequest(BaseModel):
+    day: str | None = None        # YYYY-MM-DD, default = latest match day
+    format: str = "reel"          # reel | youtube
 
 
 class ProfileUpdate(BaseModel):
@@ -205,24 +211,29 @@ def get_match_detail(profile_id: str, fixture_id: str):
 def get_content(profile_id: str):
     cfg = _profile_or_404(profile_id)
     records = []
-    for f in sorted(cfg.CONTENT_DIR.glob("match_*.json"), reverse=True):
+    # Per-match videos and daily digests both live as JSON + .mp4 records.
+    files = sorted(cfg.CONTENT_DIR.glob("match_*.json"), reverse=True) + \
+        sorted(cfg.CONTENT_DIR.glob("digest_*.json"), reverse=True)
+    for f in files:
         try:
             rec = json.loads(f.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             continue
-        # Expose a playable URL if the .mp4 exists, so the frontend can embed it.
-        vid = cfg.VIDEO_DIR / f"match_{rec.get('fixture_id')}.mp4"
+        # The .mp4 sits next to its JSON with the same stem.
+        vid = cfg.VIDEO_DIR / f"{f.stem}.mp4"
         if vid.exists():
-            rec["video_url"] = f"/api/profiles/{profile_id}/video/{rec['fixture_id']}"
+            rec["video_url"] = f"/api/profiles/{profile_id}/video/{f.stem}"
         records.append(rec)
     return records
 
 
-@app.get("/api/profiles/{profile_id}/video/{fixture_id}")
-def get_video(profile_id: str, fixture_id: str):
-    """Stream a generated .mp4 so the frontend can play it inline."""
+@app.get("/api/profiles/{profile_id}/video/{name}")
+def get_video(profile_id: str, name: str):
+    """Stream a generated .mp4 (match or digest) so the frontend can play it."""
     cfg = _profile_or_404(profile_id)
-    vid = cfg.VIDEO_DIR / f"match_{fixture_id}.mp4"
+    # Accept both a bare fixture id (legacy) and a full stem (match_<id>/digest_<...>).
+    stem = name if name.startswith(("match_", "digest_")) else f"match_{name}"
+    vid = cfg.VIDEO_DIR / f"{stem}.mp4"
     if not vid.exists():
         raise HTTPException(status_code=404, detail="Video not found")
     return FileResponse(vid, media_type="video/mp4")
@@ -303,7 +314,7 @@ def _run_generation(profile_id: str, req: GenerateRequest, run_id: int):
         result = run_match(profile_id, match, on_step=on_step,
                           check_cancel=check_cancel,
                           do_video=req.do_video, do_upload=req.do_upload,
-                          do_social=req.do_social)
+                          do_social=req.do_social, video_format=req.format)
         with _lock:
             if _is_current():
                 _running[profile_id].update(state="done", result=result)
@@ -347,6 +358,81 @@ def generate(profile_id: str, req: GenerateRequest):
         raise HTTPException(status_code=503,
                             detail=f"Could not start generation: {e}") from e
     return {"ok": True, "message": "Generation started"}
+
+
+def _run_digest(profile_id: str, req: DigestRequest, run_id: int):
+    def _is_current() -> bool:
+        return _running.get(profile_id, {}).get("run_id") == run_id
+
+    def on_step(step: str, msg: str):
+        with _lock:
+            if _is_current():
+                _running[profile_id].update(
+                    step=step, message=msg,
+                    progress=_STEP_PROGRESS.get(step, _running[profile_id].get("progress", 0)))
+
+    def check_cancel() -> bool:
+        return _cancel_flags.get(profile_id) == run_id
+
+    try:
+        from pipeline.digest import run_daily_digest
+        cfg = BrandProfile(profile_id)
+        day = req.day
+        if not day:
+            # Default to the most recent finished match day.
+            src = get_data_source(cfg)
+            latest = src.latest_finished(limit=1)
+            day = latest[0].date if latest else None
+        if not day:
+            raise RuntimeError("No match day available")
+        result = run_daily_digest(profile_id, day, req.format,
+                                  on_step=on_step, check_cancel=check_cancel)
+        with _lock:
+            if _is_current():
+                _running[profile_id].update(state="done", result=result)
+    except Exception as e:  # noqa: BLE001
+        with _lock:
+            if _is_current():
+                _running[profile_id].update(state="error", message=str(e))
+    finally:
+        time.sleep(30)
+        with _lock:
+            if _is_current():
+                _running.pop(profile_id, None)
+                _cancel_flags.pop(profile_id, None)
+
+
+@app.post("/api/profiles/{profile_id}/digest", status_code=202)
+def generate_digest(profile_id: str, req: DigestRequest):
+    global _run_counter
+    _profile_or_404(profile_id)
+    with _lock:
+        if profile_id in _running and _running[profile_id].get("state") == "running":
+            raise HTTPException(status_code=409, detail="A generation is already running")
+        _run_counter += 1
+        run_id = _run_counter
+        _running[profile_id] = {"state": "running", "step": "start", "progress": 0,
+                                "message": "Preparando resumen del día...", "run_id": run_id}
+        _cancel_flags.pop(profile_id, None)
+    try:
+        threading.Thread(target=_run_digest, args=(profile_id, req, run_id),
+                         daemon=True).start()
+    except Exception as e:  # noqa: BLE001
+        with _lock:
+            if _running.get(profile_id, {}).get("run_id") == run_id:
+                _running.pop(profile_id, None)
+        raise HTTPException(status_code=503, detail=f"Could not start digest: {e}") from e
+    return {"ok": True, "message": "Digest started"}
+
+
+@app.get("/api/worldcup/calendar")
+def worldcup_calendar():
+    """FIFA World Cup 2026 schedule grouped by day (openfootball, free)."""
+    from pipeline.wc_calendar import calendar_summary
+    try:
+        return calendar_summary()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 @app.get("/api/profiles/{profile_id}/status")
