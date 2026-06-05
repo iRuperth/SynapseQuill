@@ -92,12 +92,17 @@ _NO_TEXT = ("absolutely NO text, NO letters, NO words, NO numbers, NO writing, "
 
 
 def crowd_prompt(team: str, visual_style: str, vertical: bool = True) -> str:
-    """Build a FLUX prompt for a packed crowd in `team`'s colours."""
+    """Build a FLUX prompt for a packed crowd in `team`'s colours.
+
+    Leads with large FLAGS and SCARVES (which FLUX renders cleanly) and pushes
+    jerseys to the background — jerseys are where FLUX invents garbled text.
+    """
     comp = "vertical 9:16 composition" if vertical else "wide 16:9 composition"
     return (
-        f"{visual_style}, photorealistic huge jubilant crowd of {palette(team)} "
-        f"cheering in a packed stadium at night, flares and confetti, vibrant "
-        f"colours, {comp}, {_NO_TEXT}"
+        f"{visual_style}, photorealistic packed stadium crowd at night waving MANY "
+        f"large {palette(team)}, raised scarves and big flags filling the frame, "
+        f"distant blurred sea of supporters, flares and confetti, vibrant colours, "
+        f"{comp}, {_NO_TEXT}"
     )
 
 
@@ -105,7 +110,7 @@ def generic_crowd_prompt(visual_style: str, vertical: bool = True) -> str:
     """Fallback prompt for draws / unknown teams (the previous generic crowd)."""
     comp = "vertical 9:16 composition" if vertical else "wide 16:9 composition"
     return (
-        f"{visual_style}, photorealistic huge crowd of football fans in plain "
-        f"coloured jerseys and scarves cheering in a packed stadium at night, "
-        f"flares and confetti, vibrant colours, {comp}, {_NO_TEXT}"
+        f"{visual_style}, photorealistic packed stadium crowd at night waving many "
+        f"large colourful flags and raised scarves filling the frame, distant "
+        f"blurred sea of fans, flares and confetti, vibrant colours, {comp}, {_NO_TEXT}"
     )
