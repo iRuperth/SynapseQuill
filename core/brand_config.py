@@ -134,6 +134,7 @@ class BrandProfile:
         self.TTS_PROVIDER = voice.get("provider", self._env_get("TTS_PROVIDER", "edge"))
         self.TTS_VOICE = voice.get("voice") or vp["voice"]
         self.TTS_RATE = voice.get("rate") or vp["rate"]
+        self.TTS_PITCH = voice.get("pitch") or vp.get("pitch", "+0Hz")
 
         # --- Visual media ---
         media = j.get("media", {})

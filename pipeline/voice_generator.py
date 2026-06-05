@@ -17,13 +17,40 @@ from pathlib import Path
 from core.brand_config import BrandProfile
 
 
-def _edge(text: str, voice: str, rate: str, audio_path: Path) -> list[dict]:
+def _is_high_energy(text: str) -> bool:
+    """True when the narration reads like an excited shout (many CAPS / '¡!')."""
+    shouts = text.count("¡") + text.count("!")
+    caps_words = sum(1 for w in text.split() if len(w) > 2 and w.isupper())
+    return shouts >= 4 or caps_words >= 3
+
+
+def _bump(pct: str, by: int) -> str:
+    """Increase a '+18%' rate string by `by` percentage points."""
+    try:
+        n = int(pct.replace("%", "").replace("+", "") or 0)
+    except ValueError:
+        n = 0
+    return f"{n + by:+d}%"
+
+
+def _bump_hz(hz: str, by: int) -> str:
+    """Increase a '+12Hz' pitch string by `by` Hz."""
+    try:
+        n = int(hz.replace("Hz", "").replace("+", "") or 0)
+    except ValueError:
+        n = 0
+    return f"{n + by:+d}Hz"
+
+
+def _edge(text: str, voice: str, rate: str, audio_path: Path,
+          pitch: str = "+0Hz", volume: str = "+12%") -> list[dict]:
     import edge_tts
 
     cues: list[dict] = []
 
     async def run():
-        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch,
+                                           volume=volume)
         with open(audio_path, "wb") as f:
             async for chunk in communicate.stream():
                 # Newer edge-tts emits SentenceBoundary; older ones WordBoundary.
@@ -56,13 +83,21 @@ def synthesize(cfg: BrandProfile, text: str, name: str = "narration") -> tuple[P
     audio_path = cfg.IMAGE_DIR.parent / f"{name}.mp3"
     audio_path.parent.mkdir(parents=True, exist_ok=True)
 
+    rate, pitch = cfg.TTS_RATE, getattr(cfg, "TTS_PITCH", "+0Hz")
+    # Goal-shout boost: Edge-TTS has no emotional styles, so when the narration
+    # is full of shouts (¡GOOOL!, lots of CAPS/exclamations) lift the whole
+    # track's energy a notch — it reads more like a real play-by-play.
+    if _is_high_energy(text):
+        rate = _bump(rate, 6)
+        pitch = _bump_hz(pitch, 6)
+
     provider = cfg.TTS_PROVIDER
     if provider == "edge":
-        cues = _edge(text, cfg.TTS_VOICE, cfg.TTS_RATE, audio_path)
+        cues = _edge(text, cfg.TTS_VOICE, rate, audio_path, pitch=pitch)
     elif provider == "gtts":
         cues = _gtts(text, cfg.LANGUAGE, audio_path)
     else:  # piper or unknown -> try edge as the safe default
-        cues = _edge(text, cfg.TTS_VOICE, cfg.TTS_RATE, audio_path)
+        cues = _edge(text, cfg.TTS_VOICE, rate, audio_path, pitch=pitch)
 
     # Sentence-level cues are already readable lines; only word-level cues
     # need grouping into ~8-word subtitle lines.
