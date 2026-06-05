@@ -38,26 +38,27 @@ def _subtitle_clips(subtitles: list[dict], total: float, fmt: VideoFormat):
 
     font = _font_path()
     w, h = fmt.width, fmt.height
-    base_y = int(h * (0.76 if fmt.vertical else 0.80))   # safe lower band
-    font_size = int(min(w, h) * 0.078)
+    base_y = int(h * (0.74 if fmt.vertical else 0.78))   # safe lower band
+    font_size = int(min(w, h) * 0.062)                   # smaller so it never clips
+    box_h = int(font_size * 2.0)                          # tall box: vertical padding
     clips = []
     for cue in word_cues(subtitles):
         start, end = min(cue["start"], total), min(cue["end"], total)
         if end <= start:
             continue
         dur = end - start
-        # method="caption" with a fixed width centres the word and wraps long
-        # ones, so nothing ever gets clipped at the frame edges.
+        # Fixed width+height box, centred text: the extra height gives vertical
+        # padding so the word is never clipped top/bottom, even with the bounce.
         txt = TextClip(
             text=cue["text"].upper(), font=font, font_size=font_size,
-            color="yellow", stroke_color="black", stroke_width=5,
-            method="caption", size=(int(w * 0.92), None), text_align="center",
+            color="yellow", stroke_color="black", stroke_width=4,
+            method="caption", size=(int(w * 0.9), box_h), text_align="center",
         ).with_start(start).with_duration(dur)
 
-        # Jump animation: the word pops up a few px then settles (ease-out).
+        # Gentle jump that settles quickly and never leaves the safe band.
         def _pos(t, _y=base_y, _d=dur):
-            prog = min(t / max(_d * 0.4, 0.01), 1.0)
-            jump = int(20 * (1 - prog) ** 2)      # small bounce, stays on screen
+            prog = min(t / max(_d * 0.35, 0.01), 1.0)
+            jump = int(14 * (1 - prog) ** 2)
             return ("center", _y - jump)
 
         clips.append(txt.with_position(_pos))
@@ -75,7 +76,6 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
     The output dimensions follow `fmt` (reel 9:16 or youtube 16:9).
     """
     from moviepy import AudioFileClip, CompositeVideoClip
-    from moviepy.video.fx import CrossFadeIn
 
     from .animated_graphics import build_animated_clips, set_format
     set_format(fmt)
@@ -88,16 +88,15 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
     ambience = [p for p in images if "ambience" in p.name]
     backdrop = str(ambience[0]) if ambience else None
 
+    # Place the scoreboard then the timeline back to back WITHOUT a crossfade:
+    # the crowd backdrop is baked into every frame, so a crossfade would show
+    # black during the overlap. Butt-joining keeps the image whole all the time.
     anim = build_animated_clips(cfg, match, total, background=backdrop)
-    fade = 0.5
     graph = []
     cursor = 0.0
     seg_len = total / max(len(anim), 1)
-    for i, clip in enumerate(anim):
-        c = clip.with_start(cursor)
-        if i > 0:
-            c = c.with_effects([CrossFadeIn(fade)])
-        graph.append(c)
+    for clip in anim:
+        graph.append(clip.with_start(cursor))
         cursor += seg_len
 
     layers = [*graph, *_subtitle_clips(subtitles, total, fmt)]
