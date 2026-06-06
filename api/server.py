@@ -18,6 +18,8 @@ Endpoints (all under /api):
     POST   /api/science/explain                arXiv + Graph RAG science explanation
     POST   /api/finance/news                   live market summary for a ticker
     POST   /api/agents/route                   multi-agent supervisor routing
+    GET    /api/profiles/{id}/lab/history       saved Lab / free-topic requests
+    DELETE /api/profiles/{id}/lab/history/{name} delete one history record
 
 Background generation mirrors Synapse Core's pattern: a global `_running` dict
 guarded by a lock, plus `_cancel_flags`, with `/generate` returning immediately
@@ -248,6 +250,12 @@ def freeform_content(profile_id: str, body: FreeformRequest):
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(e)) from e
+    # Persist to the Lab history. content is {platform: text}; store it as the
+    # result (joined for the list preview) plus the structured map in meta.
+    result_text = "\n\n".join(f"[{p}]\n{t}" for p, t in (content or {}).items())
+    _save_lab_history(profile_id, "freeform", body.topic, result_text,
+                      {"audience": body.audience, "language": body.language,
+                       "platforms": body.platforms, "content": content})
     return {"topic": body.topic, "audience": body.audience, "content": content}
 
 
@@ -523,14 +531,83 @@ class TopicRequest(BaseModel):
     topic: str
     language: str = "es"
     use_graph: bool = True       # also use the knowledge-graph context (Graph RAG)
+    profile_id: str | None = None   # whose history to log this under
 
 
 class TickerRequest(BaseModel):
     ticker: str
+    profile_id: str | None = None
 
 
 class RouteRequest(BaseModel):
     request: str
+    profile_id: str | None = None
+
+
+# ── Laboratorio IA / free-topic request history ──────────────────────
+_LAB_SEQ = 0
+_LAB_SEQ_LOCK = threading.Lock()
+
+
+def _save_lab_history(profile_id: str | None, kind: str, prompt: str,
+                      result: str, meta: dict | None = None) -> None:
+    """Persist one Lab/free-topic request+response as a JSON record.
+
+    Best-effort: a logging failure must never break the actual feature, so all
+    errors are swallowed. Records live in the profile's output/lab dir, one file
+    per request, newest-first by the monotonic sequence in the filename.
+    """
+    if not profile_id:
+        return
+    try:
+        cfg = BrandProfile(profile_id)
+    except Exception:  # noqa: BLE001 — unknown profile: just skip logging
+        return
+    global _LAB_SEQ
+    with _LAB_SEQ_LOCK:
+        _LAB_SEQ += 1
+        seq = _LAB_SEQ
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    name = f"lab_{kind}_{stamp}_{seq:04d}"
+    record = {
+        "id": name,
+        "kind": kind,                 # science | finance | agents | freeform
+        "prompt": prompt,
+        "result": result,
+        "meta": meta or {},
+        "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    try:
+        (cfg.LAB_DIR / f"{name}.json").write_text(
+            json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+@app.get("/api/profiles/{profile_id}/lab/history")
+def lab_history(profile_id: str):
+    """Return the saved Laboratorio IA / free-topic requests, newest first."""
+    cfg = _profile_or_404(profile_id)
+    records = []
+    for f in sorted(cfg.LAB_DIR.glob("lab_*.json"), reverse=True):
+        try:
+            records.append(json.loads(f.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError):
+            continue
+    return records
+
+
+@app.delete("/api/profiles/{profile_id}/lab/history/{name}")
+def delete_lab_history(profile_id: str, name: str):
+    """Delete one saved Lab/free-topic record."""
+    cfg = _profile_or_404(profile_id)
+    if not name.startswith("lab_") or "/" in name or ".." in name:
+        raise HTTPException(status_code=400, detail="Invalid id")
+    path = cfg.LAB_DIR / f"{name}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    path.unlink()
+    return {"ok": True}
 
 
 # Suggested arXiv topics that tie the scientific RAG to this project's sports
@@ -555,13 +632,13 @@ def science_explain(body: TopicRequest):
     """Popular-science explanation grounded in arXiv RAG + optional Graph RAG."""
     from pipeline.tools.arxiv_rag import explain
     try:
-        return {
-            "topic": body.topic,
-            "explanation": explain(body.topic, language=body.language,
-                                   use_graph=body.use_graph),
-        }
+        explanation = explain(body.topic, language=body.language,
+                              use_graph=body.use_graph)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(e)) from e
+    _save_lab_history(body.profile_id, "science", body.topic, explanation,
+                      {"language": body.language, "use_graph": body.use_graph})
+    return {"topic": body.topic, "explanation": explanation}
 
 
 @app.post("/api/finance/news")
@@ -569,9 +646,11 @@ def finance_news(body: TickerRequest):
     """Live market summary for a ticker (advanced level)."""
     from pipeline.tools.finance import market_summary
     try:
-        return {"ticker": body.ticker, "summary": market_summary(body.ticker)}
+        summary = market_summary(body.ticker)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(e)) from e
+    _save_lab_history(body.profile_id, "finance", body.ticker, summary)
+    return {"ticker": body.ticker, "summary": summary}
 
 
 @app.post("/api/agents/route")
@@ -579,9 +658,11 @@ def agents_route(body: RouteRequest):
     """Route a free-form content request through the multi-agent supervisor (expert level)."""
     from agents.graph import route_request
     try:
-        return {"request": body.request, "result": route_request(body.request)}
+        result = route_request(body.request)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(e)) from e
+    _save_lab_history(body.profile_id, "agents", body.request, result)
+    return {"request": body.request, "result": result}
 
 
 # ── Serve built frontend (production / Docker) ───────────────────────
