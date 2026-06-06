@@ -34,21 +34,29 @@ def facts_check(match: Match, text: str) -> dict:
     norm = text.translate({0x2010: "-", 0x2011: "-", 0x2012: "-",
                            0x2013: "-", 0x2014: "-", 0x2212: "-"})
     h, a = match.home_goals, match.away_goals
-    if h is not None and a is not None:
+    # A goalless draw is narrated as "empate sin goles" far more often than as a
+    # literal "0-0", so the score-token check would false-fail almost every real
+    # 0-0 narration. Only enforce the token when at least one goal was scored.
+    if h is not None and a is not None and (h or a):
         sep = r"\s*(?:[-:x]|\s(?:a|to)\s)\s*"
         score_re = re.compile(rf"\b(\d{{1,2}}){sep}(\d{{1,2}})\b")
         target = frozenset((h, a))             # order-agnostic final score
         pairs = [frozenset((int(m1), int(m2))) for m1, m2 in score_re.findall(norm)]
+        final_str = "-".join(str(x) for x in sorted((h, a)))
 
         # 1) The correct final must appear at least once.
         if target not in pairs:
             issues.append(f"final score {h}-{a} not clearly stated")
-        # 2) The LAST score mentioned (the running total at the end / the stated
-        #    final) must equal the real final — a play-by-play ends on the final
-        #    score, so a hallucinated final is caught here even if a correct
-        #    running score appeared earlier.
-        elif pairs and pairs[-1] != target:
-            issues.append(f"the last score stated ({list(pairs[-1])}) is not the final {h}-{a}")
+        # 2) The LAST score-shaped token that equals a PLAUSIBLE football score
+        #    must be the final. Football prose freely contains minute ranges
+        #    ("los 90-95 minutos", "el 10-15"), so we ignore trailing pairs whose
+        #    numbers are both too large to be a scoreline (>9) before deciding —
+        #    otherwise a legitimate range after the score would false-fail.
+        else:
+            scorelike = [p for p in pairs if all(x <= 9 for x in p)]
+            if scorelike and scorelike[-1] != target:
+                stated = "-".join(str(x) for x in sorted(scorelike[-1]))
+                issues.append(f"the last score stated ({stated}) is not the final {final_str}")
 
     # Scorer-invention detection is left to the stronger LLM-judge layer below:
     # a regex over capitalised tokens produces too many false positives in free
