@@ -17,34 +17,51 @@ of the app imports fine without them.
 """
 
 from core.llm import get_llm
-from pipeline.tools.finance import as_langchain_tool
+from pipeline.tools.arxiv_rag import as_langchain_tool as science_tool
+from pipeline.tools.finance import as_langchain_tool as finance_tool
 
 
-def build_supervisor(supervisor_provider: str = "groq"):
-    """Build and compile the multi-agent supervisor graph."""
+def _resolve_provider(provider: str | None) -> str:
+    """Honour the same precedence as core.llm: explicit arg, else LLM_PROVIDER."""
+    import os
+    return (provider or os.getenv("LLM_PROVIDER", "groq")).lower()
+
+
+def build_supervisor(supervisor_provider: str | None = None):
+    """Build and compile the multi-agent supervisor graph.
+
+    Every agent (and the router) runs on the resolved provider, so the whole
+    graph honours the project's switchable-provider design — it uses whatever
+    LLM_PROVIDER (or the explicit arg) points to: groq / cerebras / gemini /
+    ollama. Falls back to groq only if nothing is configured.
+    """
     from langgraph.prebuilt import create_react_agent
     from langgraph_supervisor import create_supervisor
 
+    prov = _resolve_provider(supervisor_provider)
+
     sports_agent = create_react_agent(
-        get_llm("groq", temperature=0.7), tools=[], name="sports_agent",
+        get_llm(prov, temperature=0.7), tools=[], name="sports_agent",
         prompt=("You produce exciting, factual football match content for the "
                 "FIFA World Cup. Never invent scores or scorers."),
     )
 
     social_agent = create_react_agent(
-        get_llm("groq", temperature=0.8), tools=[], name="social_agent",
+        get_llm(prov, temperature=0.8), tools=[], name="social_agent",
         prompt=("You write platform-specific social and blog copy (blog, X, "
                 "Instagram, LinkedIn), respecting each platform's length and tone."),
     )
 
     science_agent = create_react_agent(
-        get_llm("groq", temperature=0.3), tools=[], name="science_agent",
-        prompt=("You explain scientific topics for a general audience, grounded "
-                "in retrieved arXiv context. Never invent facts or citations."),
+        get_llm(prov, temperature=0.3), tools=[science_tool()],
+        name="science_agent",
+        prompt=("You explain scientific topics for a general audience. ALWAYS call "
+                "the science_explain tool to ground your answer in retrieved arXiv "
+                "context. Never invent facts or citations."),
     )
 
     finance_agent = create_react_agent(
-        get_llm("groq", temperature=0.4), tools=[as_langchain_tool()],
+        get_llm(prov, temperature=0.4), tools=[finance_tool()],
         name="finance_agent",
         prompt=("You create up-to-date financial market content using the "
                 "financial_news tool. Cite real, retrieved figures only."),
@@ -52,7 +69,7 @@ def build_supervisor(supervisor_provider: str = "groq"):
 
     supervisor = create_supervisor(
         agents=[sports_agent, social_agent, science_agent, finance_agent],
-        model=get_llm(supervisor_provider, temperature=0),
+        model=get_llm(prov, temperature=0),
         prompt=(
             "You are a router. Read the user's content request and delegate to "
             "exactly one agent:\n"
@@ -66,7 +83,7 @@ def build_supervisor(supervisor_provider: str = "groq"):
     return supervisor.compile()
 
 
-def route_request(request: str, *, supervisor_provider: str = "groq") -> str:
+def route_request(request: str, *, supervisor_provider: str | None = None) -> str:
     """Convenience: run one request through the supervisor and return the text."""
     app = build_supervisor(supervisor_provider)
     result = app.invoke({"messages": [{"role": "user", "content": request}]})
