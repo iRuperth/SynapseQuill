@@ -19,13 +19,14 @@ from core.brand_config import BrandProfile
 
 
 def _collapse_stretched(text: str) -> str:
-    """Collapse 3+ repeated letters to a single one (GOOOL -> GOL, siiii -> si).
+    """Cap repeated letters at 3 (GOOOOOL -> GOOOL, siiiii -> siii).
 
-    Edge-TTS reads stretched vowels as separate syllables ('Go-ol'), which sounds
-    unnatural, so we normalise them before synthesis. Subtitles use the raw text,
-    so only the spoken audio is affected.
+    A moderate stretch of 3 (e.g. 'GOOOL', 'GOOOLAZO') reads as a natural cheer
+    on Edge-TTS; 4+ repeats get pronounced as separate syllables ('Go-ol'), which
+    sounds wrong. So we cap at 3 rather than collapsing to 1. Subtitles use the
+    raw text; only the spoken audio is normalised.
     """
-    return re.sub(r"(.)\1{2,}", r"\1", text)
+    return re.sub(r"(.)\1{3,}", r"\1\1\1", text)
 
 
 def _is_high_energy(text: str) -> bool:
