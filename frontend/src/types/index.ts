@@ -105,8 +105,11 @@ export interface MatchDetail extends Match {
 }
 
 export interface ContentRecord {
+  id?: string                       // stable stem for playback/deletion
   fixture_id: number
   scoreline: string
+  day?: string                      // digests use day instead of scoreline
+  type?: string                     // 'digest' for daily digests
   narration?: string
   metadata?: { title: string; description: string; tags: string[] }
   video?: string
@@ -134,4 +137,27 @@ export interface GlobalConfig {
   youtube_privacy: string[]
   competitions: CompetitionOption[]
   voices: VoiceOption[]
+}
+
+// ── Freeform content (essential level) ──────────────────────────────
+export interface FreeformResult {
+  topic: string
+  audience: string
+  content: Record<string, string>   // { platform: text }
+}
+
+// ── Advanced / expert feature responses ─────────────────────────────
+export interface ScienceResult {
+  topic: string
+  explanation: string
+}
+
+export interface FinanceResult {
+  ticker: string
+  summary: string
+}
+
+export interface AgentRouteResult {
+  request: string
+  result: string
 }

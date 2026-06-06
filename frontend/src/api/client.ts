@@ -1,8 +1,10 @@
 // Single typed axios layer. Components call these functions directly.
 import axios from 'axios'
 import type {
+  AgentRouteResult,
   CalendarSummary,
-  ContentRecord, GenerationStatus, GlobalConfig, Match, MatchDetail, Profile, ProfileSummary,
+  ContentRecord, FinanceResult, FreeformResult, GenerationStatus, GlobalConfig, Match,
+  MatchDetail, Profile, ProfileSummary, ScienceResult,
 } from '../types'
 
 const http = axios.create({ baseURL: '/api' })
@@ -30,6 +32,9 @@ export const getMatchDetail = (id: string, fixtureId: number) =>
 
 export const getContent = (id: string) =>
   http.get<ContentRecord[]>(`/profiles/${id}/content`).then((r) => r.data)
+
+export const deleteContent = (id: string, contentId: string) =>
+  http.delete(`/profiles/${id}/content/${contentId}`).then((r) => r.data)
 
 export const generate = (id: string, fixtureId: number,
   opts?: { do_video?: boolean; do_upload?: boolean; format?: string }) =>
@@ -59,3 +64,24 @@ export const publishVideo = (id: string, fixtureId: number, privacy: string) =>
   http.post<{ ok: boolean; youtube_url: string; privacy: string }>(
     `/profiles/${id}/publish`, { fixture_id: fixtureId, privacy },
   ).then((r) => r.data)
+
+// ── Freeform content (essential level: any topic the user provides) ──
+export const generateFreeform = (
+  id: string,
+  body: { topic: string; audience?: string; platforms?: string[]; language?: string; extra?: string },
+) =>
+  http.post<FreeformResult>(`/profiles/${id}/content/freeform`, body).then((r) => r.data)
+
+// ── Advanced / expert features ──────────────────────────────────────
+export const getScienceTopics = () =>
+  http.get<{ topics: string[] }>('/science/topics').then((r) => r.data.topics)
+
+export const explainScience = (topic: string, language: string, useGraph = true) =>
+  http.post<ScienceResult>('/science/explain', { topic, language, use_graph: useGraph })
+    .then((r) => r.data)
+
+export const financeNews = (ticker: string) =>
+  http.post<FinanceResult>('/finance/news', { ticker }).then((r) => r.data)
+
+export const routeAgent = (request: string) =>
+  http.post<AgentRouteResult>('/agents/route', { request }).then((r) => r.data)
