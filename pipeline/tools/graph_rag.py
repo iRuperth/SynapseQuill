@@ -31,23 +31,45 @@ def build_graph(documents, llm=None) -> nx.DiGraph:
     return g
 
 
+def _matching_nodes(g: nx.DiGraph, entity: str) -> list[str]:
+    """All graph nodes that match `entity` by substring (case-insensitive).
+
+    The LLM emits proper-noun, often multi-word node ids ('Expected Goals',
+    'xG Model'), while seed terms from a query are single words ('expected',
+    'goals', 'xg'). Exact equality almost never matches, so we match a seed when
+    it appears as a substring of a node id (or vice-versa) — this is what makes
+    the Graph-RAG context actually populate instead of silently coming back empty.
+    """
+    ent = entity.lower()
+    out = []
+    for n in g.nodes:
+        nl = n.lower()
+        if ent == nl or ent in nl or nl in ent:
+            out.append(n)
+    return out
+
+
 def neighbours(g: nx.DiGraph, entity: str, hops: int = 1) -> list[str]:
-    """Return entities within `hops` of `entity` (case-insensitive match)."""
-    match = next((n for n in g.nodes if n.lower() == entity.lower()), None)
-    if match is None:
-        return []
-    return list(nx.ego_graph(g, match, radius=hops).nodes)
+    """Return entities within `hops` of any node matching `entity`."""
+    seen: list[str] = []
+    for match in _matching_nodes(g, entity):
+        for n in nx.ego_graph(g, match, radius=hops).nodes:
+            if n not in seen:
+                seen.append(n)
+    return seen
 
 
 def graph_context(g: nx.DiGraph, entities: list[str], hops: int = 1) -> str:
     """Build a textual context block from the graph for the given entities."""
     lines = []
+    matched: set[str] = set()
     for ent in entities:
-        match = next((n for n in g.nodes if n.lower() == ent.lower()), None)
-        if match is None:
-            continue
-        for _, tgt, data in g.out_edges(match, data=True):
-            lines.append(f"{match} —{data.get('type', 'related')}→ {tgt}")
-        for src, _, data in g.in_edges(match, data=True):
-            lines.append(f"{src} —{data.get('type', 'related')}→ {match}")
+        for match in _matching_nodes(g, ent):
+            if match in matched:
+                continue
+            matched.add(match)
+            for _, tgt, data in g.out_edges(match, data=True):
+                lines.append(f"{match} —{data.get('type', 'related')}→ {tgt}")
+            for src, _, data in g.in_edges(match, data=True):
+                lines.append(f"{src} —{data.get('type', 'related')}→ {match}")
     return "\n".join(dict.fromkeys(lines))  # dedupe, keep order

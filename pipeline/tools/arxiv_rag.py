@@ -145,8 +145,13 @@ def _graph_context(topic: str, docs) -> str:
     try:
         from pipeline.tools.graph_rag import build_graph, graph_context
         g = build_graph(docs)
-        # Seed entities from the topic words present as graph nodes.
-        words = [w for w in topic.replace("(", " ").replace(")", " ").split() if len(w) > 3]
+        # Seed entities from the topic words. Keep words >3 chars AND short
+        # domain acronyms (xG, AI, VR) that the length filter would otherwise
+        # drop — those are often the most relevant graph nodes. graph_context
+        # now matches seeds against node ids by substring, so single words hit
+        # multi-word nodes like 'Expected Goals'.
+        words = [w for w in topic.replace("(", " ").replace(")", " ").split()
+                 if len(w) > 3 or (1 < len(w) <= 3 and any(c.isupper() for c in w))]
         ctx = graph_context(g, words, hops=1)
         return ctx
     except Exception:  # noqa: BLE001
