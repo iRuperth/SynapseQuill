@@ -41,17 +41,31 @@ def quote(ticker: str) -> dict:
         if r.ok:
             d = r.json()
             return {"ticker": ticker, "price": d.get("c"), "change_pct": d.get("dp")}
-    # Fallback: yfinance
+    # Fallback: yfinance. fast_info exposes previous_close, so we can still
+    # compute today's change% even without Finnhub.
     import yfinance as yf
-    t = yf.Ticker(ticker)
-    fast = t.fast_info
-    return {"ticker": ticker, "price": getattr(fast, "last_price", None), "change_pct": None}
+    fast = yf.Ticker(ticker).fast_info
+    price = getattr(fast, "last_price", None)
+    prev = getattr(fast, "previous_close", None)
+    change_pct = None
+    if price is not None and prev:
+        change_pct = (price - prev) / prev * 100
+    return {"ticker": ticker, "price": price, "change_pct": change_pct,
+            "currency": getattr(fast, "currency", "USD")}
 
 
 def market_summary(ticker: str) -> str:
     """Human-readable market summary combining a quote and top headlines."""
     q = quote(ticker)
-    lines = [f"{ticker}: {q.get('price')} ({q.get('change_pct')}% today)"]
+    price, change = q.get("price"), q.get("change_pct")
+    cur = q.get("currency") or "USD"
+    sym = {"USD": "$", "EUR": "€", "GBP": "£"}.get(cur, "")
+    price_s = f"{sym}{price:,.2f}" if isinstance(price, (int, float)) else "n/d"
+    if isinstance(change, (int, float)):
+        change_s = f" ({change:+.2f}% hoy)"
+    else:
+        change_s = ""
+    lines = [f"{ticker}: {price_s}{change_s}"]
     try:
         for n in company_news(ticker):
             lines.append(f"- {n['headline']}")
