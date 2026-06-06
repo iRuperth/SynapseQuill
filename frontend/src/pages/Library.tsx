@@ -75,6 +75,7 @@ function Card({ item, profileId, onChanged }: {
   const title = item.metadata?.title ?? item.scoreline ?? (item.day ? `Resumen ${item.day}` : 'Vídeo')
 
   async function onPublish() {
+    if (item.fixture_id == null) return
     setPublishing(true); setMsg(null)
     try {
       const r = await publishVideo(profileId, item.fixture_id, privacy)
@@ -148,7 +149,10 @@ function Card({ item, profileId, onChanged }: {
             </div>
           )}
 
-          {item.video_url && (
+          {/* Publishing goes through the per-match endpoint (match_<fixture_id>),
+              so it only applies to single-match videos. Digests have no
+              fixture_id and are not publishable yet — hide the controls. */}
+          {item.video_url && item.fixture_id != null && (
             <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               {item.youtube_url ? (
                 <a href={item.youtube_url} target="_blank" rel="noreferrer"

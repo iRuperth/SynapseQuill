@@ -106,7 +106,7 @@ export interface MatchDetail extends Match {
 
 export interface ContentRecord {
   id?: string                       // stable stem for playback/deletion
-  fixture_id: number
+  fixture_id?: number               // absent for digests (keyed by id/day)
   scoreline: string
   day?: string                      // digests use day instead of scoreline
   type?: string                     // 'digest' for daily digests
