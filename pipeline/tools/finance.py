@@ -38,20 +38,31 @@ def quote(ticker: str) -> dict:
     if key:
         r = requests.get("https://finnhub.io/api/v1/quote",
                         params={"symbol": ticker, "token": key}, timeout=30)
-        if r.ok:
+        # Finnhub answers 200 with c=0 for an unknown ticker; treat a zero/empty
+        # current price as a miss and fall through to yfinance rather than
+        # reporting a fabricated $0.00 quote.
+        if r.ok and r.json().get("c"):
             d = r.json()
-            return {"ticker": ticker, "price": d.get("c"), "change_pct": d.get("dp")}
+            return {"ticker": ticker, "price": d.get("c"),
+                    "change_pct": d.get("dp"), "currency": "USD"}
     # Fallback: yfinance. fast_info exposes previous_close, so we can still
-    # compute today's change% even without Finnhub.
+    # compute today's change% even without Finnhub. fast_info is lazy and raises
+    # (KeyError 'exchangeTimezoneName', etc.) for an unknown/delisted ticker, so
+    # treat any failure as "no data" rather than a 500.
     import yfinance as yf
-    fast = yf.Ticker(ticker).fast_info
-    price = getattr(fast, "last_price", None)
-    prev = getattr(fast, "previous_close", None)
+    price = prev = currency = None
+    try:
+        fast = yf.Ticker(ticker).fast_info
+        price = getattr(fast, "last_price", None)
+        prev = getattr(fast, "previous_close", None)
+        currency = getattr(fast, "currency", "USD")
+    except Exception:  # noqa: BLE001
+        pass
     change_pct = None
     if price is not None and prev:
         change_pct = (price - prev) / prev * 100
     return {"ticker": ticker, "price": price, "change_pct": change_pct,
-            "currency": getattr(fast, "currency", "USD")}
+            "currency": currency or "USD"}
 
 
 def market_summary(ticker: str) -> str:
@@ -60,11 +71,10 @@ def market_summary(ticker: str) -> str:
     price, change = q.get("price"), q.get("change_pct")
     cur = q.get("currency") or "USD"
     sym = {"USD": "$", "EUR": "€", "GBP": "£"}.get(cur, "")
-    price_s = f"{sym}{price:,.2f}" if isinstance(price, (int, float)) else "n/d"
-    if isinstance(change, (int, float)):
-        change_s = f" ({change:+.2f}% hoy)"
-    else:
-        change_s = ""
+    if not isinstance(price, (int, float)):
+        return f"{ticker}: sin datos de cotización (símbolo desconocido o sin precio)."
+    price_s = f"{sym}{price:,.2f}"
+    change_s = f" ({change:+.2f}% hoy)" if isinstance(change, (int, float)) else ""
     lines = [f"{ticker}: {price_s}{change_s}"]
     try:
         for n in company_news(ticker):
