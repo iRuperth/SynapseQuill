@@ -157,7 +157,10 @@ class BrandProfile:
         self.IMAGE_DIR = self.OUTPUT_DIR / "images"
         self.CONTENT_DIR = self.OUTPUT_DIR / "content"
         self.LOG_DIR = self.OUTPUT_DIR / "logs"
-        for d in (self.VIDEO_DIR, self.IMAGE_DIR, self.CONTENT_DIR, self.LOG_DIR):
+        # History of Laboratorio IA / free-topic requests (one JSON per request).
+        self.LAB_DIR = self.OUTPUT_DIR / "lab"
+        for d in (self.VIDEO_DIR, self.IMAGE_DIR, self.CONTENT_DIR, self.LOG_DIR,
+                  self.LAB_DIR):
             d.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
