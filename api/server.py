@@ -8,12 +8,14 @@ Endpoints (all under /api):
     POST   /api/profiles                       create a profile from the template
     GET    /api/profiles/{id}                  profile (secret-free)
     PATCH  /api/profiles/{id}                  update profile.json (whitelisted)
-    GET    /api/profiles/{id}/matches          World Cup fixtures for a day
+    GET    /api/profiles/{id}/matches          fixtures for a day (any league)
+    POST   /api/profiles/{id}/content/freeform multi-platform text for a free topic
     GET    /api/profiles/{id}/content          previously generated content records
     POST   /api/profiles/{id}/generate         generate a match video (background)
     GET    /api/profiles/{id}/status           poll generation progress
     POST   /api/profiles/{id}/cancel           cooperative cancellation
-    POST   /api/science/explain                arXiv-grounded science explanation
+    GET    /api/science/topics                 suggested sports-science topics
+    POST   /api/science/explain                arXiv + Graph RAG science explanation
     POST   /api/finance/news                   live market summary for a ticker
     POST   /api/agents/route                   multi-agent supervisor routing
 
@@ -23,11 +25,17 @@ guarded by a lock, plus `_cancel_flags`, with `/generate` returning immediately
 """
 
 import json
+import os
 import shutil
 import sys
 import threading
 import time
 from pathlib import Path
+
+# Use the pure-Python protobuf parser so ChromaDB's opentelemetry dependency
+# (old generated *_pb2.py) works under modern protobuf. Must be set before any
+# protobuf-backed import. See pipeline/tools/arxiv_rag.py for the full rationale.
+os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -81,6 +89,16 @@ class DigestRequest(BaseModel):
 
 class ProfileUpdate(BaseModel):
     updates: dict
+
+
+class FreeformRequest(BaseModel):
+    """Essential-level: free topic the user provides, any platform/audience."""
+    topic: str
+    audience: str = ""
+    platforms: list[str] | None = None     # default: all (blog/x/ig/linkedin)
+    language: str | None = None            # default: profile language
+    extra: str = ""                        # optional extra guidance
+    provider: str | None = None            # optional LLM override
 
 
 class CreateProfile(BaseModel):
@@ -207,6 +225,32 @@ def get_match_detail(profile_id: str, fixture_id: str):
     }
 
 
+@app.post("/api/profiles/{profile_id}/content/freeform")
+def freeform_content(profile_id: str, body: FreeformRequest):
+    """Generate multi-platform text from a free topic + audience (essential level).
+
+    Uses the profile's brand/persona system_preamble and language by default, so
+    the output is personalised exactly like the match-based content path.
+    """
+    cfg = _profile_or_404(profile_id)
+    if not body.topic.strip():
+        raise HTTPException(status_code=400, detail="A 'topic' is required")
+    from pipeline.content_generator import generate_freeform
+    try:
+        content = generate_freeform(
+            body.topic,
+            audience=body.audience,
+            language=body.language or cfg.LANGUAGE,
+            platforms=body.platforms,
+            system_preamble=cfg.system_preamble,
+            extra=body.extra,
+            provider=body.provider or cfg.LLM_PROVIDER,
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return {"topic": body.topic, "audience": body.audience, "content": content}
+
+
 @app.get("/api/profiles/{profile_id}/content")
 def get_content(profile_id: str):
     cfg = _profile_or_404(profile_id)
@@ -220,11 +264,33 @@ def get_content(profile_id: str):
         except json.JSONDecodeError:
             continue
         # The .mp4 sits next to its JSON with the same stem.
+        rec["id"] = f.stem          # stable id for playback + deletion
         vid = cfg.VIDEO_DIR / f"{f.stem}.mp4"
         if vid.exists():
             rec["video_url"] = f"/api/profiles/{profile_id}/video/{f.stem}"
         records.append(rec)
     return records
+
+
+@app.delete("/api/profiles/{profile_id}/content/{name}")
+def delete_content(profile_id: str, name: str):
+    """Delete a generated item (its JSON, .mp4 and image folder)."""
+    cfg = _profile_or_404(profile_id)
+    # Guard against path traversal: only allow our own stems.
+    if not name.startswith(("match_", "digest_")) or "/" in name or ".." in name:
+        raise HTTPException(status_code=400, detail="Invalid id")
+    removed = []
+    for path in (cfg.CONTENT_DIR / f"{name}.json", cfg.VIDEO_DIR / f"{name}.mp4"):
+        if path.exists():
+            path.unlink()
+            removed.append(path.name)
+    # The per-item image folder is named after the stem (e.g. match_<id>).
+    img_folder = cfg.IMAGE_DIR / name
+    if img_folder.is_dir():
+        shutil.rmtree(img_folder, ignore_errors=True)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"ok": True, "removed": removed}
 
 
 @app.get("/api/profiles/{profile_id}/video/{name}")
@@ -456,6 +522,7 @@ def cancel(profile_id: str):
 class TopicRequest(BaseModel):
     topic: str
     language: str = "es"
+    use_graph: bool = True       # also use the knowledge-graph context (Graph RAG)
 
 
 class TickerRequest(BaseModel):
@@ -466,12 +533,33 @@ class RouteRequest(BaseModel):
     request: str
 
 
+# Suggested arXiv topics that tie the scientific RAG to this project's sports
+# domain — the frontend offers these as one-click examples.
+_SCIENCE_TOPICS = [
+    "expected goals (xG) models in football",
+    "machine learning for football tactics analysis",
+    "biomechanics of sprinting and injury prevention in soccer",
+    "player tracking and computer vision in team sports",
+    "deep learning for sports video highlight detection",
+]
+
+
+@app.get("/api/science/topics")
+def science_topics():
+    """Suggested sports-science arXiv topics for the science RAG (advanced level)."""
+    return {"topics": _SCIENCE_TOPICS}
+
+
 @app.post("/api/science/explain")
 def science_explain(body: TopicRequest):
-    """Popular-science explanation grounded in arXiv RAG (advanced level)."""
+    """Popular-science explanation grounded in arXiv RAG + optional Graph RAG."""
     from pipeline.tools.arxiv_rag import explain
     try:
-        return {"topic": body.topic, "explanation": explain(body.topic, language=body.language)}
+        return {
+            "topic": body.topic,
+            "explanation": explain(body.topic, language=body.language,
+                                   use_graph=body.use_graph),
+        }
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=str(e)) from e
 
