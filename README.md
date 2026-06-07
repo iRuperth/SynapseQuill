@@ -115,16 +115,17 @@ summary as each match finishes. It survives closing the terminal and the IDE,
 restarts on crash, and starts at login — no need to keep a terminal open.
 
 ```bash
-bash scripts/install_scheduler.sh install    # install + start
-bash scripts/install_scheduler.sh status     # is it running?
-bash scripts/install_scheduler.sh logs        # follow the log live
-bash scripts/install_scheduler.sh stop        # stop
-bash scripts/install_scheduler.sh uninstall   # remove
+bash scripts/f88ball_scheduler_ctl.sh install    # install + start
+bash scripts/f88ball_scheduler_ctl.sh status     # is it running?
+bash scripts/f88ball_scheduler_ctl.sh logs        # follow the log live
+bash scripts/f88ball_scheduler_ctl.sh stop        # stop
+bash scripts/f88ball_scheduler_ctl.sh uninstall   # remove
 ```
 
 Runs while the Mac is on and signed in. Logs at
 `profiles/worldcup_es/output/logs/scheduler.log`. Poll interval and profile are
-set in `scripts/run_scheduler.sh`.
+set in `scripts/f88ball_scheduler.sh`. The launchd label is `com.f88ball.scheduler`
+(unique per app, so multiple projects can each run their own).
 
 ## Docker
 

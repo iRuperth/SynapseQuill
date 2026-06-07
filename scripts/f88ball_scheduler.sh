@@ -1,10 +1,10 @@
 #!/bin/bash
-# run_scheduler.sh — launch the World Cup auto-summary scheduler.
+# f88ball_scheduler.sh — launch the World Cup auto-summary scheduler.
 #
 # Polls the data source and, as each match finishes, generates its summary and
 # (with --upload) uploads it to YouTube. Runs forever; meant to be supervised by
-# launchd (see com.synapsequill.scheduler.plist) so it survives terminal/IDE
-# close and restarts on crash or login.
+# launchd (see com.f88ball.scheduler.plist) so it survives terminal/IDE close
+# and restarts on crash or login.
 
 set -euo pipefail
 

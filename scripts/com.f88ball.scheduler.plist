@@ -4,17 +4,17 @@
 <!--
   launchd service that keeps the World Cup scheduler running in the background.
   Install:  cp this file to ~/Library/LaunchAgents/ then `launchctl load` it
-  (see scripts/install_scheduler.sh). It starts at login and restarts on crash.
+  (see scripts/f88ball_scheduler_ctl.sh). Starts at login, restarts on crash.
 -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.synapsequill.scheduler</string>
+    <string>com.f88ball.scheduler</string>
 
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/rup/Documents/DevelopmentLocal/SynapseQuill/scripts/run_scheduler.sh</string>
+        <string>/Users/rup/Documents/DevelopmentLocal/SynapseQuill/scripts/f88ball_scheduler.sh</string>
     </array>
 
     <!-- Start at login and keep it alive: relaunch if it ever exits/crashes. -->

@@ -1,19 +1,19 @@
 #!/bin/bash
-# install_scheduler.sh — install / start / stop / status the background scheduler
-# as a macOS launchd agent. It survives closing the terminal and the IDE, and
-# restarts on crash or at login.
+# f88ball_scheduler_ctl.sh — install / start / stop / status the background
+# scheduler as a macOS launchd agent. It survives closing the terminal and the
+# IDE, and restarts on crash or at login.
 #
 # Usage:
-#   bash scripts/install_scheduler.sh install   # install + start
-#   bash scripts/install_scheduler.sh stop      # stop (and disable autostart)
-#   bash scripts/install_scheduler.sh start     # start again
-#   bash scripts/install_scheduler.sh status    # is it running?
-#   bash scripts/install_scheduler.sh logs      # tail the log
-#   bash scripts/install_scheduler.sh uninstall # remove completely
+#   bash scripts/f88ball_scheduler_ctl.sh install   # install + start
+#   bash scripts/f88ball_scheduler_ctl.sh stop      # stop (and disable autostart)
+#   bash scripts/f88ball_scheduler_ctl.sh start     # start again
+#   bash scripts/f88ball_scheduler_ctl.sh status    # is it running?
+#   bash scripts/f88ball_scheduler_ctl.sh logs      # tail the log
+#   bash scripts/f88ball_scheduler_ctl.sh uninstall # remove completely
 
 set -euo pipefail
 
-LABEL="com.synapsequill.scheduler"
+LABEL="com.f88ball.scheduler"
 PROJECT_DIR="/Users/rup/Documents/DevelopmentLocal/SynapseQuill"
 SRC_PLIST="$PROJECT_DIR/scripts/$LABEL.plist"
 DEST_PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
@@ -53,7 +53,7 @@ case "${1:-status}" in
     echo "🗑  Desinstalado."
     ;;
   *)
-    echo "Uso: bash scripts/install_scheduler.sh {install|start|stop|status|logs|uninstall}"
+    echo "Uso: bash scripts/f88ball_scheduler_ctl.sh {install|start|stop|status|logs|uninstall}"
     exit 1
     ;;
 esac
