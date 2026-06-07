@@ -78,6 +78,26 @@ def run_match(profile_id: str, match: Match, *,
         result["guardrail"] = verify(match, narration, cfg.LANGUAGE,
                                      judge_provider=cfg.LLM_PROVIDER)
 
+    # --- 1c. Polish: make the script sound human (editor crew) -------
+    # Fix known Spanish slips deterministically (e.g. "la penalty" -> "el
+    # penalty") and let an LLM editor rewrite anything that still reads
+    # unnaturally — WITHOUT changing facts. Then re-verify the facts: if the
+    # editor somehow altered a name/score/minute, fall back to the unpolished
+    # (already fact-checked) narration.
+    on_step("polish", "Reviewing narration so it sounds natural")
+    from .text_polish import polish
+    polished = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
+    if polished != narration:
+        check = verify(match, polished, cfg.LANGUAGE,
+                       judge_provider=cfg.LLM_PROVIDER, use_judge=False)
+        if check["passed"]:
+            narration = polished
+            result["narration"] = narration
+        else:
+            on_step("polish", "Edit changed a fact — keeping original wording")
+    if check_cancel():
+        return {**result, "status": "cancelled"}
+
     # --- 2. YouTube metadata -----------------------------------------
     on_step("metadata", "Generating YouTube metadata")
     meta = youtube_metadata(match, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
