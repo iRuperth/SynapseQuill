@@ -331,13 +331,13 @@ def _unified_frame(match: Match, language: str, p: float):
         score_frac = 0.052   # ~ same px as the reel, but as a height fraction
         tl_title_y, tl_top_y = 0.63, 0.70
 
-    # Score counts up over the first 25% of the clip. Place the numbers BELOW
-    # the crests using their real height (+ a gap) so they never crowd the logo.
+    # Static final score, shown directly from the first frame (no count-up).
+    # Place the numbers BELOW the crests using their real height (+ a gap) so
+    # they never crowd the logo.
     crest_h = max((c.height for c in (home_crest, away_crest) if c), default=0)
     score_y = crest_top + crest_h + _sy(0.025)
-    grow = _ease(min(p / 0.25, 1.0))
-    hg = round((match.home_goals or 0) * grow)
-    ag = round((match.away_goals or 0) * grow)
+    hg = match.home_goals or 0
+    ag = match.away_goals or 0
     # Size the score from the HEIGHT so it shrinks with a short frame instead of
     # staying 102px (min(W,H)) and crashing into the row below.
     score_px = _sy(score_frac)
