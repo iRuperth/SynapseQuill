@@ -346,14 +346,15 @@ def _unified_frame(match: Match, language: str, p: float):
     _center(d, "-", score_y + _sy(0.03), _font(int(score_px * 0.74)), _MUTED)
     _center_at(d, str(ag), away_cx, score_y, big, _ACCENT)
 
-    # Team names + accent bar — anchored to the BOTTOM of the score block (not a
-    # fixed fraction), so the names always sit clearly below the score dash and
-    # never collide with it however tall the crests are. The score glyphs are
-    # drawn centred on score_y, so they extend ~score_px/2 below it; add a gap.
-    names_y_px = score_y + score_px // 2 + _sy(0.045)
+    # Team names + accent bar — placed below the ACTUAL BOTTOM of the score
+    # digits. _center/_center_at draw text with its TOP at y, so the digits
+    # extend ~one glyph-height below score_y; measure it and add a clear gap so
+    # the names never overlap the big numbers, however tall the crests/score are.
+    score_bottom = score_y + (d.textbbox((0, 0), str(hg) or "0", font=big)[3])
+    names_y_px = score_bottom + _sy(0.03)
     _center(d, f"{match.home.upper()}  -  {match.away.upper()}",
             names_y_px, _font(_fs(0.028)), _TEXT)
-    bar_y_px = names_y_px + _sy(0.05)
+    bar_y_px = names_y_px + _sy(0.045)
     bar_w = int(W * 0.55)
     d.rectangle([(W - bar_w) // 2, bar_y_px, (W + bar_w) // 2, bar_y_px + max(4, _sy(0.004))],
                 fill=_ACCENT2)
@@ -377,12 +378,16 @@ def _unified_frame(match: Match, language: str, p: float):
         events = sorted((goals + cards)[:_MAX_EVENTS], key=lambda e: e[0])
 
     if events:
+        # Anchor the timeline below the accent bar (which now floats with the
+        # names) but never above its baseline fraction, so it stays put on a
+        # normal frame yet is pushed down if a tall score needs the room.
+        tl_title = max(bar_y_px + _sy(0.04), _sy(tl_title_y))
         _center(d, "MINUTO A MINUTO" if language == "es" else "TIMELINE",
-                _sy(tl_title_y), _font(_fs(0.026)), _ACCENT)
+                tl_title, _font(_fs(0.026)), _ACCENT)
         reveal_each = 1.0 / len(events)
         row_font = _font(_fs(0.026))
         box_w, box_h = _fs(0.024), _fs(0.032)
-        top_y = _sy(tl_top_y)
+        top_y = max(tl_title + _sy(0.05), _sy(tl_top_y))
 
         # Column layout. The 16:9 frame is wide but SHORT (only ~30% of its
         # height is left for rows), so it goes two-column much sooner and the
