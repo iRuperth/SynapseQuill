@@ -150,6 +150,12 @@ class BrandProfile:
         self.YOUTUBE_PRIVACY = self._env_get("YOUTUBE_PRIVACY", "private")
         if self.PRACTICE_MODE:
             self.YOUTUBE_PRIVACY = "private"
+        # When true, every generated video uploads to YouTube automatically with
+        # YOUTUBE_PRIVACY. Off by default so nothing is published unintentionally.
+        self.AUTO_UPLOAD = str(
+            j.get("youtube", {}).get("auto_upload",
+                                     self._env_get("AUTO_UPLOAD", "false"))
+        ).lower() == "true"
 
         # --- Output dirs ---
         self.OUTPUT_DIR = self.dir / "output"
@@ -215,7 +221,8 @@ class BrandProfile:
                       "voice": self.TTS_VOICE, "rate": self.TTS_RATE},
             "media": {"sources": self.MEDIA_SOURCES, "image_provider": self.IMAGE_PROVIDER},
             "style": {"visual_style": self.VISUAL_STYLE},
-            "youtube": {"practice_mode": self.PRACTICE_MODE, "privacy": self.YOUTUBE_PRIVACY},
+            "youtube": {"practice_mode": self.PRACTICE_MODE, "privacy": self.YOUTUBE_PRIVACY,
+                        "auto_upload": self.AUTO_UPLOAD},
             "has_system_preamble": bool(self.system_preamble),
         }
 
@@ -225,7 +232,7 @@ class BrandProfile:
         Only whitelisted top-level sections are accepted, to avoid writing junk.
         """
         allowed = {"name", "team", "language", "competition", "llm_provider",
-                   "voice", "media", "style", "persona"}
+                   "voice", "media", "style", "persona", "youtube"}
         data = dict(self._json)
         for key, val in updates.items():
             if key not in allowed:
