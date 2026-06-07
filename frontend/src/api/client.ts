@@ -66,6 +66,26 @@ export const publishVideo = (id: string, fixtureId: number, privacy: string) =>
     `/profiles/${id}/publish`, { fixture_id: fixtureId, privacy },
   ).then((r) => r.data)
 
+// ── YouTube upload automation (bulk / scheduled) ────────────────────
+export const getPendingUploads = (id: string) =>
+  http.get<{ pending: string[] }>(`/profiles/${id}/uploads/pending`).then((r) => r.data.pending)
+
+export const uploadAllPending = (id: string) =>
+  http.post<{ uploaded: unknown[]; results: { content_id: string; ok: boolean; error?: string }[] }>(
+    `/profiles/${id}/uploads/bulk`,
+  ).then((r) => r.data)
+
+export const scheduleUpload = (id: string, contentId: string, when: number) =>
+  http.post(`/profiles/${id}/uploads/schedule`, { content_id: contentId, when }).then((r) => r.data)
+
+export const getUploadSchedule = (id: string) =>
+  http.get<{ schedule: { content_id: string; when: number; status: string; youtube_url?: string; error?: string }[] }>(
+    `/profiles/${id}/uploads/schedule`,
+  ).then((r) => r.data.schedule)
+
+export const cancelScheduledUpload = (id: string, contentId: string) =>
+  http.delete(`/profiles/${id}/uploads/schedule/${contentId}`).then((r) => r.data)
+
 // ── Freeform content (essential level: any topic the user provides) ──
 export const generateFreeform = (
   id: string,

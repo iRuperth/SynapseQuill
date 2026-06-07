@@ -23,7 +23,7 @@ export interface Profile {
   voice: { preset: string; provider: string; voice: string; rate: string }
   media: { sources: string[]; image_provider: string }
   style: { visual_style: string }
-  youtube: { practice_mode: boolean; privacy: string }
+  youtube: { practice_mode: boolean; privacy: string; auto_upload?: boolean }
   has_system_preamble: boolean
 }
 
