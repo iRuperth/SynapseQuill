@@ -108,6 +108,24 @@ python main.py --profile worldcup_es --scheduler           # auto-generate as ma
 python main.py --profile worldcup_es --match 12345 --upload --social
 ```
 
+## Background scheduler (macOS)
+
+Run the scheduler as a background service that auto-generates and uploads a
+summary as each match finishes. It survives closing the terminal and the IDE,
+restarts on crash, and starts at login — no need to keep a terminal open.
+
+```bash
+bash scripts/install_scheduler.sh install    # install + start
+bash scripts/install_scheduler.sh status     # is it running?
+bash scripts/install_scheduler.sh logs        # follow the log live
+bash scripts/install_scheduler.sh stop        # stop
+bash scripts/install_scheduler.sh uninstall   # remove
+```
+
+Runs while the Mac is on and signed in. Logs at
+`profiles/worldcup_es/output/logs/scheduler.log`. Poll interval and profile are
+set in `scripts/run_scheduler.sh`.
+
 ## Docker
 
 ```bash
