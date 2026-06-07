@@ -95,6 +95,9 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         narration = narrate(full, language=cfg.LANGUAGE,
                             system_preamble=cfg.system_preamble,
                             provider=cfg.LLM_PROVIDER, style=style)
+        # Make each segment sound human (e.g. "la penalty" -> "el penalty").
+        from .text_polish import polish
+        narration = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
         clip, dur = _segment_clip(cfg, full, narration, fmt, seg_cap, on_step)
         segments.append(clip)
         used.append({"scoreline": full.scoreline, "duration": round(dur, 1)})
