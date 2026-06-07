@@ -325,11 +325,11 @@ def _unified_frame(match: Match, language: str, p: float):
     # overprint the names, bar and timeline header. Use a tighter set of anchors
     # (and a height-scaled score font) when horizontal so nothing collides.
     if _VERTICAL:
-        names_y, bar_y, tl_title_y, tl_top_y = 0.315, 0.365, 0.41, 0.46
         score_frac = 0.095
+        tl_title_y, tl_top_y = 0.41, 0.46
     else:
-        names_y, bar_y, tl_title_y, tl_top_y = 0.50, 0.565, 0.63, 0.70
         score_frac = 0.052   # ~ same px as the reel, but as a height fraction
+        tl_title_y, tl_top_y = 0.63, 0.70
 
     # Score counts up over the first 25% of the clip. Place the numbers BELOW
     # the crests using their real height (+ a gap) so they never crowd the logo.
@@ -340,16 +340,22 @@ def _unified_frame(match: Match, language: str, p: float):
     ag = round((match.away_goals or 0) * grow)
     # Size the score from the HEIGHT so it shrinks with a short frame instead of
     # staying 102px (min(W,H)) and crashing into the row below.
-    big = _font(_sy(score_frac))
+    score_px = _sy(score_frac)
+    big = _font(score_px)
     _center_at(d, str(hg), home_cx, score_y, big, _ACCENT)
-    _center(d, "-", score_y + _sy(0.03), _font(int(_sy(score_frac) * 0.74)), _MUTED)
+    _center(d, "-", score_y + _sy(0.03), _font(int(score_px * 0.74)), _MUTED)
     _center_at(d, str(ag), away_cx, score_y, big, _ACCENT)
 
-    # Team names + accent bar.
+    # Team names + accent bar — anchored to the BOTTOM of the score block (not a
+    # fixed fraction), so the names always sit clearly below the score dash and
+    # never collide with it however tall the crests are. The score glyphs are
+    # drawn centred on score_y, so they extend ~score_px/2 below it; add a gap.
+    names_y_px = score_y + score_px // 2 + _sy(0.045)
     _center(d, f"{match.home.upper()}  -  {match.away.upper()}",
-            _sy(names_y), _font(_fs(0.028)), _TEXT)
+            names_y_px, _font(_fs(0.028)), _TEXT)
+    bar_y_px = names_y_px + _sy(0.05)
     bar_w = int(W * 0.55)
-    d.rectangle([(W - bar_w) // 2, _sy(bar_y), (W + bar_w) // 2, _sy(bar_y) + max(4, _sy(0.004))],
+    d.rectangle([(W - bar_w) // 2, bar_y_px, (W + bar_w) // 2, bar_y_px + max(4, _sy(0.004))],
                 fill=_ACCENT2)
 
     # Chronological events: goals + cards together, revealed one by one.
