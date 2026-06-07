@@ -29,8 +29,8 @@ export default function Settings() {
       <h1 style={{ marginTop: 0 }}>Ajustes · {profile.name}</h1>
       {saved && <span style={{ color: 'var(--accent)' }}>Guardado ✓</span>}
 
-      <div style={{ display: 'grid', gap: 16, maxWidth: 460, marginTop: 16 }}>
-        <Field label="Competición (Liga España / Mundial)">
+      <div style={{ display: 'grid', gap: 16, maxWidth: 640, marginTop: 16 }}>
+        <Field label="Competición (liga o torneo)">
           <select
             value={profile.competition.preset}
             onChange={(e) => patch({ competition: { preset: e.target.value } })}
@@ -38,7 +38,7 @@ export default function Settings() {
           >
             {cfg.competitions.map((c) => (
               <option key={c.key} value={c.key}>
-                {c.label} {c.scorers === 'full' ? '· goleadores ✓' : '· goleadores vía ESPN'}
+                {c.label}{c.scorers === 'full' ? ' · goleadores ✓' : ''}
               </option>
             ))}
           </select>
@@ -70,6 +70,36 @@ export default function Settings() {
             ))}
           </select>
         </Field>
+
+        {/* YouTube publishing automation */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, display: 'grid', gap: 14 }}>
+          <strong style={{ fontSize: 14 }}>📤 Subida a YouTube</strong>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14 }}>
+            <input
+              type="checkbox"
+              checked={profile.youtube.auto_upload ?? false}
+              onChange={(e) => patch({ youtube: { auto_upload: e.target.checked } })}
+            />
+            Subir automáticamente cada vídeo generado
+          </label>
+          <Field label="Privacidad de las subidas">
+            <select
+              value={profile.youtube.privacy}
+              onChange={(e) => patch({ youtube: { privacy: e.target.value } })}
+              style={input}
+              disabled={profile.youtube.practice_mode}
+            >
+              <option value="private">Privado</option>
+              <option value="unlisted">Oculto (no listado)</option>
+              <option value="public">Público</option>
+            </select>
+          </Field>
+          {profile.youtube.practice_mode && (
+            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+              Modo prueba activo (.env PRACTICE_MODE): todo se sube como privado.
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )
