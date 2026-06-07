@@ -129,6 +129,20 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         "duration": round(float(digest.duration) if hasattr(digest, "duration") else 0, 1),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
+
+    # Auto-upload the finished digest if the profile has it enabled.
+    if cfg.AUTO_UPLOAD:
+        on_step("upload", f"Uploading digest to YouTube ({cfg.YOUTUBE_PRIVACY})")
+        title = f"Resumen del día · {day}"
+        meta = {"title": title, "description": " ".join(tags), "tags": tags}
+        try:
+            from .publishers import upload_youtube
+            record["youtube_url"] = upload_youtube(cfg, out, meta)
+            record["youtube_privacy"] = cfg.YOUTUBE_PRIVACY
+        except Exception as e:  # noqa: BLE001
+            on_step("upload", f"Auto-upload failed: {e}")
+            record["upload_error"] = str(e)
+
     rec_path = cfg.CONTENT_DIR / f"digest_{day}_{fmt.key}.json"
     rec_path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     on_step("done", f"Digest ready: {len(used)} matches")

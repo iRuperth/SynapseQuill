@@ -129,10 +129,19 @@ def run_match(profile_id: str, match: Match, *,
         result["social"] = generate_all(cfg, match, provider=cfg.LLM_PROVIDER)
 
     # --- 4. Upload to YouTube (Phase 2) ------------------------------
-    if do_upload and video_path:
+    # Upload when explicitly requested OR when the profile has AUTO_UPLOAD on,
+    # so generated summaries publish themselves with the configured privacy.
+    if (do_upload or cfg.AUTO_UPLOAD) and video_path:
         on_step("upload", f"Uploading to YouTube ({cfg.YOUTUBE_PRIVACY})")
-        from .publishers import upload_youtube
-        result["youtube_url"] = upload_youtube(cfg, video_path, meta)
+        try:
+            from .publishers import upload_youtube
+            result["youtube_url"] = upload_youtube(cfg, video_path, meta)
+            result["youtube_privacy"] = cfg.YOUTUBE_PRIVACY
+        except Exception as e:  # noqa: BLE001
+            # A failed auto-upload must NOT lose the generated video. Record the
+            # error and continue; it stays in the library to upload manually.
+            on_step("upload", f"Auto-upload failed: {e}")
+            result["upload_error"] = str(e)
 
     # --- 5. Persist content record -----------------------------------
     record = {**result, "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
