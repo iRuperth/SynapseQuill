@@ -275,7 +275,10 @@ def get_content(profile_id: str):
         rec["id"] = f.stem          # stable id for playback + deletion
         vid = cfg.VIDEO_DIR / f"{f.stem}.mp4"
         if vid.exists():
-            rec["video_url"] = f"/api/profiles/{profile_id}/video/{f.stem}"
+            # Version the URL by the .mp4 mtime so a regenerated video (same
+            # filename) busts the browser cache and never shows a stale frame.
+            ver = int(vid.stat().st_mtime)
+            rec["video_url"] = f"/api/profiles/{profile_id}/video/{f.stem}?v={ver}"
         records.append(rec)
     return records
 
@@ -355,11 +358,91 @@ def publish_video(profile_id: str, body: PublishRequest):
     return {"ok": True, "youtube_url": url, "privacy": privacy}
 
 
+# ── Upload automation: bulk, scheduled, and the background worker ─────
+class ScheduleRequest(BaseModel):
+    content_id: str
+    when: float          # unix epoch seconds at which to upload
+
+
+@app.post("/api/profiles/{profile_id}/uploads/bulk")
+def upload_bulk(profile_id: str):
+    """Upload every generated video that is not yet on YouTube, one by one."""
+    cfg = _profile_or_404(profile_id)
+    from pipeline.upload_manager import pending_uploads, upload_content
+    results = []
+    for cid in pending_uploads(cfg):
+        try:
+            r = upload_content(cfg, cid)
+            results.append({"content_id": cid, "ok": True, "youtube_url": r["youtube_url"]})
+        except Exception as e:  # noqa: BLE001
+            results.append({"content_id": cid, "ok": False, "error": str(e)})
+    return {"uploaded": [r for r in results if r["ok"]], "results": results}
+
+
+@app.get("/api/profiles/{profile_id}/uploads/pending")
+def uploads_pending(profile_id: str):
+    """List content ids that have a video but are not yet uploaded."""
+    cfg = _profile_or_404(profile_id)
+    from pipeline.upload_manager import pending_uploads
+    return {"pending": pending_uploads(cfg)}
+
+
+@app.post("/api/profiles/{profile_id}/uploads/schedule")
+def upload_schedule(profile_id: str, body: ScheduleRequest):
+    """Queue a video to upload automatically at the given time."""
+    cfg = _profile_or_404(profile_id)
+    from pipeline.upload_manager import schedule_upload
+    try:
+        return schedule_upload(cfg, body.content_id, body.when)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@app.get("/api/profiles/{profile_id}/uploads/schedule")
+def upload_schedule_list(profile_id: str):
+    """List the scheduled uploads (pending / done / failed)."""
+    cfg = _profile_or_404(profile_id)
+    from pipeline.upload_manager import list_schedule
+    return {"schedule": list_schedule(cfg)}
+
+
+@app.delete("/api/profiles/{profile_id}/uploads/schedule/{content_id}")
+def upload_schedule_cancel(profile_id: str, content_id: str):
+    """Cancel a pending scheduled upload."""
+    cfg = _profile_or_404(profile_id)
+    from pipeline.upload_manager import cancel_scheduled
+    return cancel_scheduled(cfg, content_id)
+
+
+def _upload_worker() -> None:
+    """Background loop: every minute, upload any scheduled item whose time has
+    come, for every profile. Daemon thread started on app startup."""
+    from pipeline.upload_manager import drain_due
+    while True:
+        try:
+            for summary in list_profiles():
+                try:
+                    cfg = BrandProfile(summary["id"])
+                    drain_due(cfg)
+                except Exception:  # noqa: BLE001 — one bad profile must not kill the loop
+                    continue
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(60)
+
+
+@app.on_event("startup")
+def _start_upload_worker() -> None:
+    threading.Thread(target=_upload_worker, daemon=True).start()
+
+
 # Progress percentage per pipeline step, so the frontend can show a bar.
 _STEP_PROGRESS = {
-    "start": 2, "enrich": 8, "narrate": 22, "guardrail": 38,
-    "metadata": 48, "media": 62, "voice": 74, "video": 88,
-    "social": 93, "upload": 97, "done": 100,
+    "start": 2, "enrich": 8, "narrate": 20, "guardrail": 34, "polish": 42,
+    "metadata": 50, "media": 62, "voice": 74, "video": 86,
+    "social": 92, "upload": 97, "done": 100,
 }
 
 
