@@ -3,7 +3,8 @@ import axios from 'axios'
 import type {
   AgentRouteResult,
   CalendarSummary,
-  ContentRecord, FinanceResult, FreeformResult, GenerationStatus, GlobalConfig, Match,
+  ContentRecord, FinanceResult, FreeformResult, GenerationStatus, GlobalConfig,
+  LabHistoryRecord, Match,
   MatchDetail, Profile, ProfileSummary, ScienceResult,
 } from '../types'
 
@@ -76,12 +77,19 @@ export const generateFreeform = (
 export const getScienceTopics = () =>
   http.get<{ topics: string[] }>('/science/topics').then((r) => r.data.topics)
 
-export const explainScience = (topic: string, language: string, useGraph = true) =>
-  http.post<ScienceResult>('/science/explain', { topic, language, use_graph: useGraph })
+export const explainScience = (topic: string, language: string, useGraph = true, profileId?: string) =>
+  http.post<ScienceResult>('/science/explain', { topic, language, use_graph: useGraph, profile_id: profileId })
     .then((r) => r.data)
 
-export const financeNews = (ticker: string) =>
-  http.post<FinanceResult>('/finance/news', { ticker }).then((r) => r.data)
+export const financeNews = (ticker: string, profileId?: string) =>
+  http.post<FinanceResult>('/finance/news', { ticker, profile_id: profileId }).then((r) => r.data)
 
-export const routeAgent = (request: string) =>
-  http.post<AgentRouteResult>('/agents/route', { request }).then((r) => r.data)
+export const routeAgent = (request: string, profileId?: string) =>
+  http.post<AgentRouteResult>('/agents/route', { request, profile_id: profileId }).then((r) => r.data)
+
+// ── Laboratorio IA / free-topic request history ─────────────────────
+export const getLabHistory = (profileId: string) =>
+  http.get<LabHistoryRecord[]>(`/profiles/${profileId}/lab/history`).then((r) => r.data)
+
+export const deleteLabHistory = (profileId: string, id: string) =>
+  http.delete(`/profiles/${profileId}/lab/history/${id}`).then((r) => r.data)

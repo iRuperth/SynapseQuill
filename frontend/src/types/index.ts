@@ -161,3 +161,13 @@ export interface AgentRouteResult {
   request: string
   result: string
 }
+
+// One saved Laboratorio IA / free-topic request (history).
+export interface LabHistoryRecord {
+  id: string
+  kind: 'science' | 'finance' | 'agents' | 'freeform'
+  prompt: string
+  result: string
+  meta?: Record<string, unknown>
+  created_at?: string
+}
