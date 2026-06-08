@@ -29,6 +29,7 @@ dependencies = [
     "langchain-ollama>=0.2.0",
     # --- Voice / Video ---
     "edge-tts>=7.0.0",
+    "gtts>=2.5.0",
     "moviepy>=1.0.3",
     "pillow>=10.4.0",
     "pysrt>=1.1.2",
