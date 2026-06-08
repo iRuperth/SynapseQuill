@@ -57,8 +57,13 @@ class Match:
     country: str = ""
     competition: str = ""          # real league/cup name (not hardcoded)
     date: str = ""                 # YYYY-MM-DD
+    kickoff: str = ""              # full ISO datetime in UTC, e.g. 2026-06-08T19:00Z
     goals: list[Goal] = field(default_factory=list)
     cards: list[Card] = field(default_factory=list)
+    # Penalty shootout (knockout games that ended level). Populated when the
+    # provider exposes it (ESPN does). None when there was no shootout.
+    home_pens: int | None = None
+    away_pens: int | None = None
 
     @property
     def is_finished(self) -> bool:
@@ -69,14 +74,22 @@ class Match:
         return f"{self.home} {self.home_goals}-{self.away_goals} {self.away}"
 
     @property
+    def went_to_penalties(self) -> bool:
+        return self.home_pens is not None and self.away_pens is not None
+
+    @property
     def winner(self) -> str | None:
-        """The winning team's name, or None on a draw / unknown score."""
+        """The winning team's name, or None on a draw / unknown score. When the
+        game was level and decided on penalties, the shootout winner wins."""
         if self.home_goals is None or self.away_goals is None:
             return None
         if self.home_goals > self.away_goals:
             return self.home
         if self.away_goals > self.home_goals:
             return self.away
+        # Level after normal/extra time — fall back to the shootout result.
+        if self.went_to_penalties and self.home_pens != self.away_pens:
+            return self.home if self.home_pens > self.away_pens else self.away
         return None
 
     @property

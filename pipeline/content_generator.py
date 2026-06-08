@@ -1,11 +1,15 @@
 """
-content_generator.py — generate ready-to-publish social/blog text for a match.
+content_generator.py — generate ready-to-publish social/blog text.
 
 Covers the briefing's multi-platform requirement: blog post, Twitter/X,
-Instagram and LinkedIn, each respecting its length/voice, in the profile's
+Instagram and LinkedIn, each respecting its length/voice, in the chosen
 language, with the brand/persona system_preamble prepended to every prompt.
 
-The LLM is constrained to the match facts to avoid inventing data.
+Two input modes share the same per-platform prompts:
+  • match mode  — constrained to the factual match data (never invents).
+  • freeform mode — the user supplies a free TOPIC + AUDIENCE, covering the
+    briefing's core "content on any topic the user provides, adapted to
+    platform and audience" requirement (essential level).
 """
 
 from core.brand_config import BrandProfile
@@ -28,27 +32,74 @@ _PLATFORMS = {
 }
 
 
-def generate_platform(cfg: BrandProfile, match: Match, platform: str,
-                      *, provider: str | None = None) -> str:
-    """Generate text for one platform."""
+def _render(platform: str, lang: str, preamble: str, facts_label: str,
+            facts_body: str, grounding: str, *, provider: str | None,
+            label: str) -> str:
+    """Shared generation core for one platform (match or freeform)."""
     if platform not in _PLATFORMS:
         raise ValueError(f"Unknown platform '{platform}'. Choose {list(_PLATFORMS)}.")
-    lang = _LANG.get(cfg.LANGUAGE, "Spanish")
-
-    system = (cfg.system_preamble + "\n\n" if cfg.system_preamble else "") + (
+    system = (preamble + "\n\n" if preamble else "") + (
         f"You write {platform} content in {lang}. {_PLATFORMS[platform]} "
-        "Use ONLY the given match facts — never invent scorers, minutes or scores. "
-        "Output only the post text, no extra commentary."
+        f"{grounding} Output only the post text, no extra commentary."
     )
-    user = f"Match facts:\n{_facts_block(match)}"
+    user = f"{facts_label}:\n{facts_body}"
     return call_llm(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        provider=provider or cfg.LLM_PROVIDER, max_tokens=700, label=f"Content-{platform}",
+        provider=provider, max_tokens=700, label=label,
+    )
+
+
+# ── Match mode (existing pipeline) ───────────────────────────────────
+def generate_platform(cfg: BrandProfile, match: Match, platform: str,
+                      *, provider: str | None = None) -> str:
+    """Generate text for one platform from a match (constrained to facts)."""
+    return _render(
+        platform, _LANG.get(cfg.LANGUAGE, "Spanish"), cfg.system_preamble,
+        "Match facts", _facts_block(match),
+        "Use ONLY the given match facts — never invent scorers, minutes or scores.",
+        provider=provider or cfg.LLM_PROVIDER, label=f"Content-{platform}",
     )
 
 
 def generate_all(cfg: BrandProfile, match: Match, platforms: list[str] | None = None,
                  *, provider: str | None = None) -> dict[str, str]:
-    """Generate text for several platforms. Returns {platform: text}."""
+    """Generate text for several platforms from a match. Returns {platform: text}."""
     platforms = platforms or list(_PLATFORMS)
     return {p: generate_platform(cfg, match, p, provider=provider) for p in platforms}
+
+
+# ── Freeform mode (essential-level: any topic the user provides) ─────
+def _brief_block(topic: str, audience: str, extra: str = "") -> str:
+    """Build the freeform brief block the model must write about."""
+    lines = [f"Topic: {topic}"]
+    if audience:
+        lines.append(f"Target audience: {audience}")
+    if extra:
+        lines.append(f"Extra guidance: {extra}")
+    return "\n".join(lines)
+
+
+def generate_freeform_platform(platform: str, topic: str, *, audience: str = "",
+                               language: str = "es", system_preamble: str = "",
+                               extra: str = "", provider: str | None = None) -> str:
+    """Generate text for one platform from a free TOPIC + AUDIENCE (no match)."""
+    return _render(
+        platform, _LANG.get(language, "Spanish"), system_preamble,
+        "Content brief", _brief_block(topic, audience, extra),
+        ("Write accurate, useful content tailored to the topic and audience. "
+         "Do not fabricate statistics, quotes or facts you are unsure of."),
+        provider=provider, label=f"Freeform-{platform}",
+    )
+
+
+def generate_freeform(topic: str, *, audience: str = "", language: str = "es",
+                      platforms: list[str] | None = None, system_preamble: str = "",
+                      extra: str = "", provider: str | None = None) -> dict[str, str]:
+    """Generate multi-platform text for a free topic. Returns {platform: text}."""
+    platforms = platforms or list(_PLATFORMS)
+    return {
+        p: generate_freeform_platform(
+            p, topic, audience=audience, language=language,
+            system_preamble=system_preamble, extra=extra, provider=provider)
+        for p in platforms
+    }

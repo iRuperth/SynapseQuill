@@ -17,6 +17,98 @@ _LANG_NAME = {
 }
 
 
+def _goal_min(s) -> int:
+    """Parse a goal minute like '23' or '90+4' to an int for ordering."""
+    try:
+        return int(str(s).split("+")[0])
+    except (ValueError, TypeError):
+        return 999
+
+
+def _was_comeback(match: Match) -> bool:
+    """True if the team that WON the match was behind on the scoreboard at some
+    point — i.e. it came from behind to win. Walks the goals in chronological
+    order, tracking the running score. Needs goal events; returns False if the
+    final result is a draw or the play-by-play is missing."""
+    winner = match.winner
+    if not winner or not match.goals:
+        return False
+    hg = ag = 0
+    for g in sorted(match.goals, key=lambda x: _goal_min(x.minute)):
+        # The event's team is the SCORER's team; an own goal credits the
+        # OPPOSING side, so flip it in that case.
+        own = "Own" in (g.kind or "")
+        if own:
+            scoring_side = match.away if g.team == match.home else match.home
+        else:
+            scoring_side = g.team
+        if scoring_side == match.home:
+            hg += 1
+        elif scoring_side == match.away:
+            ag += 1
+        # Was the eventual winner trailing right now?
+        if winner == match.home and hg < ag:
+            return True
+        if winner == match.away and ag < hg:
+            return True
+    return False
+
+
+def describe_match(match: Match) -> str | None:
+    """A short, NEUTRAL description of the match's character, to guide the
+    narration's tone. Returns an English guidance string (the other facts are in
+    English too) or None when the score is unknown.
+
+    The wording is deliberately respectful — never humiliating. The LLM is asked
+    to convey this character in its own varied words, so we describe the SHAPE of
+    the result, not a fixed phrase to copy.
+    """
+    h, a = match.home_goals, match.away_goals
+    if h is None or a is None:
+        return None
+    diff = abs(h - a)
+    # A shootout means it was level after normal/extra time, even though there
+    # is a winner. Treat that as a draw-in-play, not a clear win.
+    pen = match.went_to_penalties or match.status == "PEN"
+    draw = (h == a) and not pen
+
+    parts = []
+    if pen:
+        winner = match.winner
+        tail = (f" {winner} advanced." if winner else "")
+        parts.append(
+            "Very evenly matched — it stayed level and was settled on a penalty "
+            f"shootout.{tail} Convey the tension and that both teams deserved "
+            "credit.")
+    elif draw:
+        parts.append(
+            "A balanced, evenly-contested match that ended in a draw. "
+            "Convey the parity between the two sides.")
+    elif diff >= 6:
+        parts.append(
+            "A dominant, one-sided win for the winner. Convey command and "
+            "authority RESPECTFULLY — celebrate the winner's level, never mock "
+            "or humiliate the losing side.")
+    elif diff >= 2:
+        parts.append(
+            "A clear, comfortable win for the winner — they controlled the game "
+            "and took the result with authority.")
+    else:  # diff == 1
+        parts.append(
+            "A tight, closely-fought match decided by the finest margin. "
+            "Convey how hard-fought and competitive it was.")
+
+    # A comeback only counts when the game was WON on goals (the winner was
+    # behind and overturned it). A level game decided on penalties is not a
+    # comeback even though there is a winner.
+    if diff > 0 and not pen and _was_comeback(match):
+        parts.append(
+            f"It was a COMEBACK: {match.winner} fell behind and turned it around "
+            "to win. Emphasise the fightback and character to recover.")
+
+    return " ".join(parts)
+
+
 def _facts_block(match: Match) -> str:
     """Build a compact, unambiguous factual summary for the LLM."""
     lines = []
@@ -29,16 +121,16 @@ def _facts_block(match: Match) -> str:
         f"Away team: {match.away}",
         f"Final score: {match.home} {match.home_goals} - {match.away_goals} {match.away}",
     ]
+    # Tone guidance from the result's shape (blowout / close / draw / penalties /
+    # comeback). The model conveys this in its own respectful words.
+    character = describe_match(match)
+    if character:
+        lines.append(f"Match character (use this tone, in your own words, "
+                     f"respectfully): {character}")
     if match.venue:
         lines.append(f"Venue: {match.venue}")
     # Build ONE chronological list of every event (goals AND cards together),
     # so the narration can run through the match minute by minute.
-    def _min(s):
-        try:
-            return int(str(s).split("+")[0])
-        except ValueError:
-            return 999
-
     events = []
     for g in match.goals:
         kind = "penalty goal" if "Pen" in g.kind else (
@@ -46,9 +138,9 @@ def _facts_block(match: Match) -> str:
         line = f"minute {g.minute}: {kind} for {g.team}, scored by {g.player}"
         if g.description:
             line += f" — {g.description}"
-        events.append((_min(g.minute), line))
+        events.append((_goal_min(g.minute), line))
     for c in match.cards:
-        events.append((_min(c.minute),
+        events.append((_goal_min(c.minute),
                        f"minute {c.minute}: {c.color} card for {c.player} of {c.team}"))
 
     if events:
@@ -96,6 +188,13 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         "in English: 'GOOOAL!', 'WHAT A STRIKE!', 'UNBELIEVABLE!'). "
         "Stretch the cheer to EXACTLY 3 repeated vowels — 'GOOOL', 'GOOOLAZO' (three O's), "
         "never more than 3 (not 'GOOOOOL'), because the voice reads too many vowels as 'Go-ol'.\n"
+        "- CRITICAL — make goals FLOW: connect the play and the goal in ONE continuous "
+        "sentence using a linking verb, never leave a bare '¡Gol!' dangling on its own after "
+        "a full stop. WRONG (choppy): 'remata con la izquierda. ¡Gol!'. RIGHT (fluid): "
+        "'remata con la izquierda y MARCA el gol', '...y la manda al fondo, ¡GOOOL!', "
+        "'...y anota', '...para el GOOOLAZO', '...y la clava en la red'. The cheer "
+        "('¡GOOOL!') should ride the SAME breath as the action, joined by 'y'/'para'/a "
+        "comma — the action and the goal are one motion, not two separate lines.\n"
         "- Put the most intense words in CAPITALS for emphasis.\n"
         "- When 'how it happened' is given for a goal, describe the play vividly using it.\n"
         "- Go through the match EVENT BY EVENT in the given chronological order, narrating "
