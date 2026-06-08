@@ -1,0 +1,15 @@
+.git
+.venv
+__pycache__
+*.pyc
+.ruff_cache
+.pytest_cache
+frontend/node_modules
+frontend/dist
+profiles/*/output
+profiles/*/.env
+profiles/*/tokens
+chroma_*
+*.mp4
+*.mp3
+.env
