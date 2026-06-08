@@ -131,10 +131,14 @@ class BrandProfile:
         voice = j.get("voice", {})
         self.VOICE_PRESET = voice.get("preset") or self._env_get("VOICE_PRESET", _DEFAULT_VOICE)
         vp = _voice_get(self.VOICE_PRESET)
-        self.TTS_PROVIDER = voice.get("provider", self._env_get("TTS_PROVIDER", "edge"))
+        # The preset declares its own TTS engine (edge / elevenlabs); an explicit
+        # profile or env override still wins.
+        self.TTS_PROVIDER = (voice.get("provider") or vp.get("provider")
+                             or self._env_get("TTS_PROVIDER", "edge"))
         self.TTS_VOICE = voice.get("voice") or vp["voice"]
         self.TTS_RATE = voice.get("rate") or vp["rate"]
         self.TTS_PITCH = voice.get("pitch") or vp.get("pitch", "+0Hz")
+        self.TTS_MODEL = voice.get("model") or vp.get("model", "eleven_multilingual_v2")
 
         # --- Visual media ---
         media = j.get("media", {})
@@ -144,6 +148,10 @@ class BrandProfile:
         self.MEDIA_SOURCES = sources
         self.IMAGE_PROVIDER = media.get("image_provider", self._env_get("IMAGE_PROVIDER", "pollinations"))
         self.VISUAL_STYLE = j.get("style", {}).get("visual_style", "cinematic sports broadcast")
+        # Competition logo drawn bottom-right of every video. Swap the whole
+        # tournament by pointing this at another file (World Cup -> La Liga).
+        self.COMPETITION_LOGO = (j.get("style", {}).get("competition_logo")
+                                 or self._env_get("COMPETITION_LOGO", ""))
 
         # --- YouTube publish ---
         self.PRACTICE_MODE = str(self._env_get("PRACTICE_MODE", "true")).lower() == "true"

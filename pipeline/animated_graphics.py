@@ -31,6 +31,10 @@ _MUTED = (154, 166, 196)
 # MoviePy masks, so no corrupt mp4s). Set via set_background().
 _BACKDROP: Image.Image | None = None
 
+# Optional competition logo (World Cup / La Liga / ...), drawn bottom-right.
+# Swap the whole tournament by pointing COMPETITION_LOGO at another file.
+_LOGO: Image.Image | None = None
+
 
 def set_format(fmt: VideoFormat) -> None:
     """Set the canvas dimensions for subsequent frames (reel vs youtube)."""
@@ -65,6 +69,34 @@ def set_background(path) -> None:
         _BACKDROP = img
     except Exception:
         _BACKDROP = None
+
+
+def set_logo(path) -> None:
+    """Load the competition logo (PNG, ideally with transparency) drawn in the
+    bottom-right corner of every frame. Pass a falsy value or a missing file to
+    show no logo. Scaled to ~14% of the frame width, keeping its aspect ratio."""
+    global _LOGO
+    _LOGO = None
+    if not path:
+        return
+    try:
+        logo = Image.open(path).convert("RGBA")
+        target_w = int(W * 0.14)
+        ratio = target_w / logo.width
+        _LOGO = logo.resize((target_w, max(1, int(logo.height * ratio))))
+    except Exception:
+        _LOGO = None
+
+
+def _paste_logo(img: Image.Image) -> None:
+    """Composite the competition logo into the bottom-right corner, with a small
+    margin. No-op when no logo is set."""
+    if _LOGO is None:
+        return
+    margin = int(W * 0.04)
+    x = W - _LOGO.width - margin
+    y = H - _LOGO.height - margin
+    img.alpha_composite(_LOGO, (x, y))
 
 
 def _canvas() -> Image.Image:
@@ -417,6 +449,9 @@ def _unified_frame(match: Match, language: str, p: float):
             _draw_event_icon(d, kind, x, y + 3, box_w, box_h)
             label = f"{minute}'  {player}"
             d.text((x + box_w + _sx(0.018), y), label, font=row_font, fill=shade)
+
+    # Competition logo, bottom-right (World Cup / La Liga / ...).
+    _paste_logo(img)
     return img
 
 
@@ -438,4 +473,5 @@ def build_animated_clips(cfg: BrandProfile, match: Match, total: float,
     disappears mid-video, and the marker shows score + all goals/cards together.
     """
     set_background(background)
+    set_logo(getattr(cfg, "COMPETITION_LOGO", None))
     return [unified_clip(match, cfg.LANGUAGE, total)]
