@@ -38,6 +38,10 @@ from pydantic import BaseModel  # noqa: E402
 
 load_dotenv(ROOT / ".env")
 
+from core.tracing import setup_tracing  # noqa: E402
+
+setup_tracing()
+
 from core.brand_config import PROFILES_DIR, BrandProfile, list_profiles  # noqa: E402
 from pipeline.match_monitor import MatchMonitor  # noqa: E402
 from pipeline.runner import run_match  # noqa: E402
