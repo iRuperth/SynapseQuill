@@ -1,0 +1,41 @@
+// Single typed axios layer. Components call these functions directly.
+import axios from 'axios'
+import type {
+  ContentRecord, GenerationStatus, GlobalConfig, Match, Profile, ProfileSummary,
+} from '../types'
+
+const http = axios.create({ baseURL: '/api' })
+
+export const getGlobalConfig = () =>
+  http.get<GlobalConfig>('/config/global').then((r) => r.data)
+
+export const listProfiles = () =>
+  http.get<ProfileSummary[]>('/profiles').then((r) => r.data)
+
+export const getProfile = (id: string) =>
+  http.get<Profile>(`/profiles/${id}`).then((r) => r.data)
+
+export const createProfile = (id: string, name?: string) =>
+  http.post<Profile>('/profiles', { id, name }).then((r) => r.data)
+
+export const updateProfile = (id: string, updates: Record<string, unknown>) =>
+  http.patch<Profile>(`/profiles/${id}`, { updates }).then((r) => r.data)
+
+export const getMatches = (id: string, day?: string) =>
+  http.get<Match[]>(`/profiles/${id}/matches`, { params: { day } }).then((r) => r.data)
+
+export const getContent = (id: string) =>
+  http.get<ContentRecord[]>(`/profiles/${id}/content`).then((r) => r.data)
+
+export const generate = (id: string, fixtureId: number, opts?: { do_video?: boolean; do_upload?: boolean }) =>
+  http.post(`/profiles/${id}/generate`, {
+    fixture_id: fixtureId,
+    do_video: opts?.do_video ?? true,
+    do_upload: opts?.do_upload ?? false,
+  }).then((r) => r.data)
+
+export const getStatus = (id: string) =>
+  http.get<GenerationStatus>(`/profiles/${id}/status`).then((r) => r.data)
+
+export const cancelGeneration = (id: string) =>
+  http.post(`/profiles/${id}/cancel`).then((r) => r.data)
