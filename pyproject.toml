@@ -1,5 +1,5 @@
 [project]
-name = "synapsequill"
+name = "f88tball"
 version = "0.1.0"
 description = "Automated football (FIFA World Cup 2026) highlight-video generator for YouTube, built with LLMs, LangChain/LangGraph and free-tier AI services."
 readme = "README.md"

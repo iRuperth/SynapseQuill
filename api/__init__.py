@@ -1,1 +1,1 @@
-"""SynapseQuill FastAPI backend."""
+"""F88tball FastAPI backend."""

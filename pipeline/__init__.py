@@ -1,1 +1,1 @@
-"""SynapseQuill pipeline: match monitoring, narration, media, video, publishing."""
+"""F88tball pipeline: match monitoring, narration, media, video, publishing."""

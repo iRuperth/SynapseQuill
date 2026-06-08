@@ -1,4 +1,4 @@
-# SynapseQuill — backend (Python + FastAPI + ffmpeg for video assembly)
+# F88tball — backend (Python + FastAPI + ffmpeg for video assembly)
 FROM python:3.12-slim
 
 # System deps: ffmpeg for MoviePy, libGL/glib for Pillow/opencv

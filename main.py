@@ -1,5 +1,5 @@
 """
-main.py — SynapseQuill CLI entrypoint.
+main.py — F88tball CLI entrypoint.
 
 Usage:
     # Generate a video for one finished match now
@@ -68,7 +68,7 @@ def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
 
 
 def main():
-    p = argparse.ArgumentParser(description="SynapseQuill — World Cup highlight generator")
+    p = argparse.ArgumentParser(description="F88tball — World Cup highlight generator")
     p.add_argument("--profile", help="profile id under profiles/")
     p.add_argument("--match", type=int, help="generate a video for this fixture id")
     p.add_argument("--fixtures", action="store_true", help="list today's fixtures")

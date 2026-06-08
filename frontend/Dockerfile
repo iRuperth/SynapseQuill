@@ -1,4 +1,4 @@
-# SynapseQuill — frontend (Vite build -> nginx)
+# F88tball — frontend (Vite build -> nginx)
 FROM node:20-slim AS build
 WORKDIR /app
 RUN corepack enable

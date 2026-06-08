@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚽ SynapseQuill
+# ⚽ F88tball
 
 **Automated FIFA World Cup 2026 highlight-video generator for YouTube — powered by LLMs, LangChain/LangGraph and free-tier AI.**
 
@@ -15,7 +15,7 @@
 
 ## What it is
 
-Give SynapseQuill a finished World Cup match and it builds a ready-to-publish
+Give F88tball a finished World Cup match and it builds a ready-to-publish
 highlight video: an exciting narration written by an LLM, a real voice
 (Edge-TTS), copyright-safe visuals (team crests, animated scoreboard, AI
 ambience), burned-in subtitles, and an automatic **private** upload to YouTube.
@@ -44,7 +44,7 @@ API-Football, local embeddings — so the proof of concept costs nothing to run.
 ## Architecture
 
 ```
-SynapseQuill/
+F88tball/
 ├── core/
 │   ├── brand_config.py     # BrandProfile — per-profile config (team, language, voice, preamble)
 │   ├── llm/                # switchable LLMs: groq · gemini · cerebras · ollama (+ fallbacks)

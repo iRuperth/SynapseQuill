@@ -22,7 +22,7 @@ def setup_tracing() -> bool:
     os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
     os.environ.setdefault("LANGCHAIN_API_KEY", os.environ["LANGSMITH_API_KEY"])
     os.environ.setdefault("LANGCHAIN_PROJECT",
-                          os.getenv("LANGSMITH_PROJECT", "synapsequill"))
+                          os.getenv("LANGSMITH_PROJECT", "f88tball"))
     print(f"[tracing] LangSmith enabled — project "
-          f"'{os.getenv('LANGSMITH_PROJECT', 'synapsequill')}'")
+          f"'{os.getenv('LANGSMITH_PROJECT', 'f88tball')}'")
     return True

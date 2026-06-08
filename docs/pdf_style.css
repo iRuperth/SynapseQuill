@@ -1,0 +1,134 @@
+@page {
+  size: A4;
+  margin: 2cm 2cm 2.2cm 2cm;
+  @bottom-center {
+    content: counter(page) " / " counter(pages);
+    font-size: 9pt;
+    color: #9aa6c4;
+  }
+}
+
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+  color: #1c2433;
+}
+
+/* Title block (from the YAML front matter) */
+header#title-block-header {
+  text-align: center;
+  border-bottom: 3px solid #0f9e8e;
+  padding-bottom: 18px;
+  margin-bottom: 28px;
+}
+header#title-block-header h1.title {
+  font-size: 26pt;
+  color: #0b1020;
+  margin-bottom: 4px;
+}
+header#title-block-header p.subtitle {
+  font-size: 13pt;
+  color: #5b6480;
+  margin: 2px 0;
+}
+header#title-block-header p.date {
+  font-size: 10pt;
+  color: #9aa6c4;
+}
+
+h1 {
+  font-size: 17pt;
+  color: #0f9e8e;
+  border-bottom: 2px solid #d6dced;
+  padding-bottom: 5px;
+  margin-top: 26px;
+  page-break-after: avoid;
+}
+h2 {
+  font-size: 13.5pt;
+  color: #131a2c;
+  margin-top: 18px;
+  page-break-after: avoid;
+}
+h3 { font-size: 11.5pt; color: #334; page-break-after: avoid; }
+
+p { margin: 7px 0; }
+
+/* Tables */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 9.5pt;
+  page-break-inside: avoid;
+}
+th {
+  background: #0f9e8e;
+  color: #fff;
+  text-align: left;
+  padding: 6px 9px;
+}
+td {
+  border: 1px solid #d6dced;
+  padding: 5px 9px;
+  vertical-align: top;
+}
+tr:nth-child(even) td { background: #f4f6fb; }
+
+/* Blockquotes = examples / notes */
+blockquote {
+  margin: 12px 0;
+  padding: 9px 14px;
+  background: #eef7f5;
+  border-left: 4px solid #0f9e8e;
+  color: #234;
+  font-size: 10pt;
+  border-radius: 0 6px 6px 0;
+  page-break-inside: avoid;
+}
+blockquote p { margin: 4px 0; }
+
+/* Inline code and code spans */
+code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9pt;
+  background: #eef1f8;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: #b1009a;
+}
+
+/* Code blocks = ASCII flow diagrams. Keep them whole on a page. */
+pre {
+  background: #0b1020;
+  color: #cfe8e3;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #1d2742;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 8pt;
+  line-height: 1.35;
+  overflow-x: auto;
+  white-space: pre;
+  page-break-inside: avoid;
+  margin: 14px 0;
+}
+pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  font-size: 8pt;
+}
+
+/* Horizontal rules become subtle separators */
+hr {
+  border: none;
+  border-top: 1px solid #d6dced;
+  margin: 22px 0;
+}
+
+strong { color: #0b1020; }
+
+ul, ol { margin: 7px 0 7px 4px; padding-left: 20px; }
+li { margin: 3px 0; }
