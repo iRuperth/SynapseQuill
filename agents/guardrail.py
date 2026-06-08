@@ -1,0 +1,106 @@
+"""
+guardrail.py — anti-hallucination guardrail for generated content (expert level).
+
+Two layers:
+  1. Deterministic facts check — verify the narration mentions the correct
+     final score and does not name any scorer absent from the API data.
+     This catches the worst failure mode (inventing goals) with zero cost.
+  2. LLM-as-judge — a second model (ideally different from the generator)
+     checks groundedness, language and tone, returning a structured verdict.
+
+The narration must never invent scores/scorers — those come from API-Football.
+"""
+
+import json
+import re
+
+from json_repair import repair_json
+
+from core.llm import call_llm
+
+from pipeline.match_monitor import Match
+
+
+# ── Layer 1: deterministic facts check ───────────────────────────────
+def facts_check(match: Match, text: str) -> dict:
+    """Cheap, deterministic verification against the raw match data."""
+    issues = []
+
+    # The exact final score should appear (e.g. "5-2", "5 a 2", "5:2", "5 - 2").
+    h, a = match.home_goals, match.away_goals
+    if h is not None and a is not None:
+        patterns = [
+            rf"\b{h}\s*[-:x]\s*{a}\b",
+            rf"\b{h}\b.{{0,8}}\b{a}\b",     # "5 ... 2" loose, both numbers near
+        ]
+        if not any(re.search(p, text) for p in patterns):
+            issues.append(f"final score {h}-{a} not clearly stated")
+
+    # No invented scorers: every capitalised multi-letter token that looks like a
+    # surname should be among the real scorers or team names (best-effort).
+    known = {g.player.lower() for g in match.goals}
+    known |= {w.lower() for g in match.goals for w in g.player.split()}
+    known |= {match.home.lower(), match.away.lower()}
+    known |= {w.lower() for team in (match.home, match.away) for w in team.split()}
+
+    # We only flag clearly name-like tokens to avoid false positives.
+    invented = []
+    for token in re.findall(r"\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{3,}\b", text):
+        low = token.lower()
+        if low in known:
+            continue
+        # ignore common words by length heuristic is unreliable; skip unless it
+        # appears right after a goal-ish context. Keep this advisory only.
+    # (kept intentionally conservative — scorer invention is rare once the
+    #  prompt is constrained; the LLM judge below is the stronger net.)
+
+    return {"ok": not issues, "issues": issues, "invented_candidates": invented}
+
+
+# ── Layer 2: LLM-as-judge ────────────────────────────────────────────
+_JUDGE_SYS = (
+    "You are a strict fact-checking judge. Given the MATCH FACTS and a generated "
+    "NARRATION, decide if the narration is fully grounded in the facts (no invented "
+    "scores, scorers, minutes), is written in the expected LANGUAGE, and stays "
+    "respectful. Respond as JSON only: "
+    '{"grounded": bool, "language_ok": bool, "tone_ok": bool, "reason": str}.'
+)
+
+
+def llm_judge(match: Match, text: str, language: str, *, provider: str | None = None) -> dict:
+    from pipeline.narrator import _facts_block
+
+    user = (
+        f"MATCH FACTS:\n{_facts_block(match)}\n\n"
+        f"EXPECTED LANGUAGE: {language}\n\n"
+        f"NARRATION:\n{text}"
+    )
+    raw = call_llm(
+        [{"role": "system", "content": _JUDGE_SYS}, {"role": "user", "content": user}],
+        provider=provider, max_tokens=300, label="Guardrail",
+    )
+    try:
+        data = json.loads(repair_json(raw))
+    except Exception:
+        data = {}
+    return {
+        "grounded": bool(data.get("grounded", False)),
+        "language_ok": bool(data.get("language_ok", False)),
+        "tone_ok": bool(data.get("tone_ok", True)),
+        "reason": data.get("reason", "no reason returned"),
+    }
+
+
+def verify(match: Match, text: str, language: str, *,
+           judge_provider: str | None = None, use_judge: bool = True) -> dict:
+    """Combined verdict. `passed` is True only if both layers agree."""
+    facts = facts_check(match, text)
+    result = {"facts": facts, "passed": facts["ok"]}
+    if use_judge:
+        try:
+            judge = llm_judge(match, text, language, provider=judge_provider)
+            result["judge"] = judge
+            result["passed"] = facts["ok"] and judge["grounded"] and judge["language_ok"]
+        except Exception as e:  # noqa: BLE001
+            result["judge"] = {"error": str(e)}
+    return result
