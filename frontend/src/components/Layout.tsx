@@ -1,64 +1,77 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { CalendarDays, LayoutDashboard, ListVideo, Settings, Trophy } from 'lucide-react'
-import { useProfile } from './useProfile'
+import { CalendarDays, FlaskConical, LayoutDashboard, ListVideo, Network, PenLine, Settings, Swords, Trophy } from 'lucide-react'
+import { useT } from '../i18n/useT'
+
+// Brand: the full F88tball logo (ball + wordmark) lives in /public/logo.png.
+const BRAND = { name: 'F88tball', logo: '/logo.png' }
 
 const NAV = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/matches', label: 'Partidos', icon: Trophy, end: false },
-  { to: '/calendar', label: 'Calendario', icon: CalendarDays, end: false },
-  { to: '/library', label: 'Biblioteca', icon: ListVideo, end: false },
-  { to: '/settings', label: 'Ajustes', icon: Settings, end: false },
+  { to: '/', key: 'nav.dashboard', icon: LayoutDashboard, end: true },
+  { to: '/matches', key: 'nav.matches', icon: Trophy, end: false },
+  { to: '/calendar', key: 'nav.calendar', icon: CalendarDays, end: false },
+  { to: '/rankings', key: 'nav.rankings', icon: Swords, end: false },
+  { to: '/create', key: 'nav.create', icon: PenLine, end: false },
+  { to: '/lab', key: 'nav.lab', icon: FlaskConical, end: false },
+  { to: '/library', key: 'nav.library', icon: ListVideo, end: false },
+  { to: '/architecture', key: 'nav.architecture', icon: Network, end: false },
+  { to: '/settings', key: 'nav.settings', icon: Settings, end: false },
 ]
 
 export default function Layout() {
-  const { profiles, active, select } = useProfile()
-
+  const t = useT()
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <aside style={{
-        width: 230, background: 'var(--bg-surface)', borderRight: '1px solid var(--border)',
-        padding: '20px 14px', display: 'flex', flexDirection: 'column', gap: 6,
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Top navbar — web-style: brand left, links center/right, profile far right */}
+      <header style={{
+        position: 'sticky', top: 0, zIndex: 20,
+        background: 'var(--navbar-bg)', backdropFilter: 'blur(10px)',
+        borderBottom: '1px solid var(--border)',
       }}>
-        <div style={{ fontWeight: 800, fontSize: 20, padding: '4px 10px 16px', letterSpacing: 0.5 }}>
-          ⚽ Synapse<span style={{ color: 'var(--accent)' }}>Quill</span>
-        </div>
-
-        <select
-          value={active}
-          onChange={(e) => select(e.target.value)}
-          style={{
-            margin: '0 6px 14px', padding: '8px 10px', borderRadius: 8,
-            background: 'var(--bg-elevated)', color: 'var(--text)',
-            border: '1px solid var(--border)',
-          }}
-        >
-          {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-
-        {NAV.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            style={({ isActive }) => ({
-              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
-              borderRadius: 8, color: isActive ? 'var(--text)' : 'var(--text-muted)',
-              background: isActive ? 'var(--bg-elevated)' : 'transparent',
-              fontWeight: isActive ? 600 : 500,
-            })}
-          >
-            <Icon size={18} /> {label}
+        <nav style={{
+          width: '100%', padding: '0 32px', minHeight: 60,
+          display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
+        }}>
+          {/* Brand */}
+          <NavLink to="/" end style={{
+            display: 'flex', alignItems: 'center', marginRight: 8,
+          }}>
+            <img src={BRAND.logo} alt={BRAND.name}
+              style={{ height: 34, width: 'auto', display: 'block' }} />
           </NavLink>
-        ))}
 
-        <div style={{ marginTop: 'auto', fontSize: 12, color: 'var(--text-muted)', padding: 10 }}>
-          POC · FIFA World Cup 2026
-        </div>
-      </aside>
+          {/* Nav links */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, flexWrap: 'wrap' }}>
+            {NAV.map(({ to, key, icon: Icon, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                style={({ isActive }) => ({
+                  display: 'flex', alignItems: 'center', gap: 7, padding: '8px 12px',
+                  borderRadius: 8, fontSize: 14,
+                  color: isActive ? 'var(--text)' : 'var(--text-muted)',
+                  background: isActive ? 'var(--bg-elevated)' : 'transparent',
+                  fontWeight: isActive ? 600 : 500,
+                })}
+              >
+                <Icon size={17} /> {t(key)}
+              </NavLink>
+            ))}
+          </div>
+        </nav>
+      </header>
 
-      <main style={{ flex: 1, padding: '28px 36px', maxWidth: 1100 }}>
+      {/* Page content — full width */}
+      <main style={{ flex: 1, width: '100%', padding: '32px' }}>
         <Outlet />
       </main>
+
+      <footer style={{
+        borderTop: '1px solid var(--border)', padding: '16px 24px', textAlign: 'center',
+        fontSize: 12, color: 'var(--text-muted)',
+      }}>
+        {BRAND.name} · {t('footer.tagline')}
+      </footer>
     </div>
   )
 }
