@@ -13,6 +13,9 @@ Endpoints (all under /api):
     POST   /api/profiles/{id}/generate         generate a match video (background)
     GET    /api/profiles/{id}/status           poll generation progress
     POST   /api/profiles/{id}/cancel           cooperative cancellation
+    POST   /api/science/explain                arXiv-grounded science explanation
+    POST   /api/finance/news                   live market summary for a ticker
+    POST   /api/agents/route                   multi-agent supervisor routing
 
 Background generation mirrors Synapse Core's pattern: a global `_running` dict
 guarded by a lock, plus `_cancel_flags`, with `/generate` returning immediately
@@ -224,6 +227,50 @@ def cancel(profile_id: str):
     with _lock:
         _cancel_flags[profile_id] = True
     return {"ok": True, "message": "Cancellation requested"}
+
+
+# ── Advanced / expert feature endpoints ──────────────────────────────
+class TopicRequest(BaseModel):
+    topic: str
+    language: str = "es"
+
+
+class TickerRequest(BaseModel):
+    ticker: str
+
+
+class RouteRequest(BaseModel):
+    request: str
+
+
+@app.post("/api/science/explain")
+def science_explain(body: TopicRequest):
+    """Popular-science explanation grounded in arXiv RAG (advanced level)."""
+    from pipeline.tools.arxiv_rag import explain
+    try:
+        return {"topic": body.topic, "explanation": explain(body.topic, language=body.language)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@app.post("/api/finance/news")
+def finance_news(body: TickerRequest):
+    """Live market summary for a ticker (advanced level)."""
+    from pipeline.tools.finance import market_summary
+    try:
+        return {"ticker": body.ticker, "summary": market_summary(body.ticker)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@app.post("/api/agents/route")
+def agents_route(body: RouteRequest):
+    """Route a free-form content request through the multi-agent supervisor (expert level)."""
+    from agents.graph import route_request
+    try:
+        return {"request": body.request, "result": route_request(body.request)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 # ── Serve built frontend (production / Docker) ───────────────────────
