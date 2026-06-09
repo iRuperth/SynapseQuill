@@ -14,10 +14,14 @@ import requests
 
 
 def company_news(ticker: str, days: int = 7) -> list[dict]:
-    """Recent headlines for a ticker from Finnhub. Returns [{headline, summary, url}]."""
+    """Recent headlines for a ticker from Finnhub. Returns [{headline, summary, url}].
+
+    Headlines need a Finnhub key; without one we just return no headlines (the
+    quote still works via yfinance) rather than failing the whole summary.
+    """
     key = os.getenv("FINNHUB_API_KEY")
     if not key:
-        raise RuntimeError("No FINNHUB_API_KEY found in environment / .env")
+        return []
     to = date.today()
     frm = to - timedelta(days=days)
     r = requests.get(

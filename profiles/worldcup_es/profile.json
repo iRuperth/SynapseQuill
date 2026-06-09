@@ -3,7 +3,7 @@
   "team": "",
   "language": "es",
   "voice": {
-    "preset": "relator_mx"
+    "preset": ""
   },
   "media": {},
   "style": {
@@ -16,5 +16,8 @@
   },
   "competition": {
     "preset": "laliga"
+  },
+  "youtube": {
+    "auto_upload": false
   }
 }

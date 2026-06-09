@@ -2,10 +2,13 @@
 voice_generator.py — synthesize the narration voice and word-timed subtitles.
 
 TTS_PROVIDER:
-    edge   Edge-TTS (Microsoft) — FREE, no API key, es-AR/es-ES/es-MX + more,
-           supports rate/pitch for excitement and emits subtitles in one pass.
-    gtts   gTTS fallback (no subtitles).
-    piper  Piper local/offline (no subtitles here).
+    edge        Edge-TTS (Microsoft) — FREE, no API key, es-AR/es-ES/es-MX +
+                more, supports rate/pitch for excitement and emits subtitles in
+                one pass.
+    elevenlabs  ElevenLabs — higher quality, needs ELEVEN_LABS* keys in .env;
+                uses the with-timestamps endpoint to recover word subtitle cues.
+    gtts        gTTS fallback (no subtitles).
+    piper       Piper local/offline (no subtitles here).
 
 Returns (audio_path, subtitles) where subtitles is a list of
 {start, end, text} cues (seconds) usable for burned-in or SRT subtitles.
@@ -19,14 +22,15 @@ from core.brand_config import BrandProfile
 
 
 def _collapse_stretched(text: str) -> str:
-    """Cap repeated letters at 3 (GOOOOOL -> GOOOL, siiiii -> siii).
+    """Collapse a stretched letter (3+ repeats) down to a single one.
 
-    A moderate stretch of 3 (e.g. 'GOOOL', 'GOOOLAZO') reads as a natural cheer
-    on Edge-TTS; 4+ repeats get pronounced as separate syllables ('Go-ol'), which
-    sounds wrong. So we cap at 3 rather than collapsing to 1. Subtitles use the
-    raw text; only the spoken audio is normalised.
+    'GOOOL' / 'GOOOOOL' -> 'GOL', 'golazooo' -> 'golazo', 'siiiii' -> 'si'. The
+    TTS voices (especially ElevenLabs) stumble when they try to hold a drawn-out
+    vowel, so we say a clean 'gol'. Only 3+ repeats are collapsed, so legitimate
+    Spanish double letters ('carro', 'perro', 'llegar') are left untouched.
+    Subtitles use the raw text; only the spoken audio is normalised.
     """
-    return re.sub(r"(.)\1{3,}", r"\1\1\1", text)
+    return re.sub(r"(.)\1{2,}", r"\1", text)
 
 
 def _is_high_energy(text: str) -> bool:
@@ -86,6 +90,82 @@ def _gtts(text: str, language: str, audio_path: Path) -> list[dict]:
     return []
 
 
+def _eleven_keys() -> list[str]:
+    """All ELEVEN_LABS* keys from the environment, in declaration order."""
+    import os
+    keys = []
+    for name, val in os.environ.items():
+        if name.upper().startswith("ELEVEN_LABS") and val.strip():
+            keys.append((name, val.strip()))
+    keys.sort(key=lambda kv: kv[0])  # ELEVEN_LABS, ELEVEN_LABS2, ...
+    return [v for _, v in keys]
+
+
+def _elevenlabs(text: str, voice_id: str, audio_path: Path,
+                model: str = "eleven_multilingual_v2") -> list[dict]:
+    """ElevenLabs TTS with character-level timestamps -> word subtitle cues.
+
+    Tries each ELEVEN_LABS* key in turn so a key that is out of quota (or, for
+    library voices, on the free tier -> 402) rolls over to the next one. Premade
+    voices (Adam, Bill) work on the free tier; library voices need a paid plan.
+    """
+    import base64
+    import json
+    import urllib.error
+    import urllib.request
+
+    keys = _eleven_keys()
+    if not keys:
+        raise RuntimeError("No ELEVEN_LABS* API key in environment / .env")
+
+    body = json.dumps({
+        "text": text,
+        "model_id": model,
+        "voice_settings": {"stability": 0.4, "similarity_boost": 0.8,
+                           "style": 0.6, "use_speaker_boost": True},
+    }).encode()
+    url = (f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+           f"/with-timestamps")
+
+    last_err = None
+    for key in keys:
+        req = urllib.request.Request(url, data=body, method="POST", headers={
+            "xi-api-key": key, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                payload = json.loads(r.read())
+            break
+        except urllib.error.HTTPError as e:
+            last_err = f"{e.code} {e.read()[:200].decode('utf-8', 'replace')}"
+            continue
+    else:
+        raise RuntimeError(f"ElevenLabs request failed on all keys: {last_err}")
+
+    audio_path.write_bytes(base64.b64decode(payload["audio_base64"]))
+
+    # Build word-level cues from per-character timestamps.
+    align = payload.get("alignment") or {}
+    chars = align.get("characters") or []
+    starts = align.get("character_start_times_seconds") or []
+    ends = align.get("character_end_times_seconds") or []
+    cues: list[dict] = []
+    word, w_start = "", None
+    for ch, st, en in zip(chars, starts, ends):
+        if ch.isspace():
+            if word:
+                cues.append({"start": w_start, "end": en, "text": word,
+                             "granularity": "WordBoundary"})
+                word, w_start = "", None
+        else:
+            if w_start is None:
+                w_start = st
+            word += ch
+    if word and w_start is not None:
+        cues.append({"start": w_start, "end": ends[-1] if ends else w_start,
+                     "text": word, "granularity": "WordBoundary"})
+    return cues
+
+
 def synthesize(cfg: BrandProfile, text: str, name: str = "narration") -> tuple[Path, list[dict]]:
     """Synthesize narration audio + subtitle cues for a profile.
 
@@ -109,6 +189,11 @@ def synthesize(cfg: BrandProfile, text: str, name: str = "narration") -> tuple[P
     provider = cfg.TTS_PROVIDER
     if provider == "edge":
         cues = _edge(text, cfg.TTS_VOICE, rate, audio_path, pitch=pitch)
+    elif provider == "elevenlabs":
+        # ElevenLabs has no SSML prosody, so the goal-shout boost above doesn't
+        # apply; the emotion comes from the voice itself.
+        model = getattr(cfg, "TTS_MODEL", "eleven_multilingual_v2")
+        cues = _elevenlabs(text, cfg.TTS_VOICE, audio_path, model=model)
     elif provider == "gtts":
         cues = _gtts(text, cfg.LANGUAGE, audio_path)
     else:  # piper or unknown -> try edge as the safe default

@@ -73,6 +73,80 @@ def _subtitle_clips(subtitles: list[dict], total: float, fmt: VideoFormat):
     return clips
 
 
+def _goal_windows(subtitles: list[dict]) -> list[tuple[float, float]]:
+    """Time windows (start, end) around goal shouts, to swell the music there.
+
+    Looks for 'gol'/'goool' in the subtitle cues and returns a ~3s window around
+    each, so the background track lifts right when the narrator screams the goal.
+    """
+    windows = []
+    for cue in subtitles:
+        text = (cue.get("text") or "").lower()
+        if "gol" in text or "goal" in text:
+            start = float(cue.get("start", 0))
+            windows.append((max(0.0, start - 0.5), start + 2.5))
+    return windows
+
+
+def _background_music(total: float, n_subs_goals: list[tuple[float, float]],
+                      base: float, peak: float):
+    """Load the configured music track, loop/trim to `total`, and apply a
+    time-varying volume: `base` normally, rising to `peak` during goal windows.
+
+    Returns an AudioClip or None if no track is configured / found.
+    """
+    import os
+
+    from moviepy import AudioFileClip
+    from moviepy.audio.fx import AudioLoop
+
+    track = os.getenv("MUSIC_TRACK", "").strip()
+    if not track:
+        return None
+    path = Path(track)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent.parent / track
+    if not path.exists():
+        print(f"[music] track not found, skipping: {path}")
+        return None
+
+    music = AudioFileClip(str(path))
+    # Loop the track if it's shorter than the video, then trim to length.
+    if music.duration < total:
+        music = music.with_effects([AudioLoop(duration=total)])
+    music = music.subclipped(0, total)
+
+    def volume_at(t):
+        # t may be a scalar or a numpy array (MoviePy passes arrays).
+        try:
+            import numpy as np
+            tt = np.asarray(t, dtype=float)
+            vol = np.full(tt.shape, base)
+            for (s, e) in n_subs_goals:
+                vol = np.where((tt >= s) & (tt <= e), peak, vol)
+            return vol
+        except Exception:
+            for (s, e) in n_subs_goals:
+                if s <= float(t) <= e:
+                    return peak
+            return base
+
+    # Scale each audio sample by the time-varying volume curve.
+    def scaler(get_frame, t):
+        frame = get_frame(t)
+        v = volume_at(t)
+        try:
+            import numpy as np
+            v = np.asarray(v)
+            if frame.ndim == 2 and v.ndim == 1:
+                v = v[:, None]   # broadcast volume across stereo channels
+        except Exception:
+            pass
+        return frame * v
+
+    return music.transform(scaler, apply_to=["audio"])
+
+
 def assemble(cfg: BrandProfile, match: Match, images: list[Path],
              audio_path: Path, subtitles: list[dict], metadata: dict,
              fmt: VideoFormat = REEL) -> Path:
@@ -83,13 +157,21 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
     (robust — no MoviePy masks), with narration audio and karaoke subtitles on top.
     The output dimensions follow `fmt` (reel 9:16 or youtube 16:9).
     """
-    from moviepy import AudioFileClip, CompositeVideoClip
+    from moviepy import AudioFileClip, CompositeAudioClip, CompositeVideoClip
 
     from .animated_graphics import build_animated_clips, set_format
     set_format(fmt)
 
     audio = AudioFileClip(str(audio_path))
     total = float(audio.duration)
+
+    # Background music (under the narration). Base 20%, swelling to 30% on goals.
+    # Volumes are configurable via .env (MUSIC_VOLUME / MUSIC_VOLUME_PEAK).
+    base = float(os.getenv("MUSIC_VOLUME", "0.20"))
+    peak = float(os.getenv("MUSIC_VOLUME_PEAK", "0.30"))
+    music = _background_music(total, _goal_windows(subtitles), base, peak)
+    if music is not None:
+        audio = CompositeAudioClip([music, audio])   # narration on top of music
 
     # Crowd backdrop image (filename contains "ambience"), composited into the
     # graphics frames themselves rather than layered separately.
