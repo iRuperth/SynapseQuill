@@ -26,6 +26,7 @@ _ACCENT = (45, 212, 191)
 _ACCENT2 = (99, 102, 241)
 _TEXT = (231, 236, 247)
 _MUTED = (154, 166, 196)
+_WHITE = (255, 255, 255)   # team names, league and score: pure white for clarity
 
 # Optional crowd backdrop, composited directly into every frame (robust: no
 # MoviePy masks, so no corrupt mp4s). Set via set_background().
@@ -89,12 +90,12 @@ def set_logo(path) -> None:
 
 
 def _paste_logo(img: Image.Image) -> None:
-    """Composite the competition logo into the bottom-right corner, with a small
-    margin. No-op when no logo is set."""
+    """Composite the competition logo at the BOTTOM CENTER, with a small margin.
+    No-op when no logo is set."""
     if _LOGO is None:
         return
-    margin = int(W * 0.04)
-    x = W - _LOGO.width - margin
+    margin = int(H * 0.035)
+    x = (W - _LOGO.width) // 2
     y = H - _LOGO.height - margin
     img.alpha_composite(_LOGO, (x, y))
 
@@ -133,6 +134,53 @@ def _clean_competition(name: str) -> str:
         if low.startswith(pre):
             return n[len(pre):].strip()
     return n
+
+
+def _fmt_date(d: str) -> str:
+    """Format an ISO date (YYYY-MM-DD) as DD/MM/YYYY. Pass through anything else."""
+    s = (d or "").strip()[:10]
+    parts = s.split("-")
+    if len(parts) == 3 and all(parts):
+        y, m, day = parts
+        return f"{day}/{m}/{y}"
+    return s
+
+
+# Well-known 3-letter codes so the tags match what fans expect (RMA, ATM, BAR).
+# Anything not listed falls back to the initials algorithm below.
+_TEAM_ABBR = {
+    "Real Madrid": "RMA", "Barcelona": "BAR", "Atlético Madrid": "ATM",
+    "Atletico Madrid": "ATM", "Real Oviedo": "OVI", "Sevilla": "SEV",
+    "Real Betis": "BET", "Villarreal": "VIL", "Valencia": "VAL",
+    "Athletic Club": "ATH", "Real Sociedad": "RSO", "Girona": "GIR",
+    "Rayo Vallecano": "RAY", "Mallorca": "MLL", "Osasuna": "OSA",
+    "Celta Vigo": "CEL", "Getafe": "GET", "Alavés": "ALA", "Alaves": "ALA",
+    "Levante": "LEV", "Espanyol": "ESP", "Las Palmas": "LPA", "Elche": "ELC",
+    "Spain": "ESP", "Brazil": "BRA", "Argentina": "ARG", "France": "FRA",
+    "Germany": "GER", "England": "ENG", "Portugal": "POR", "Italy": "ITA",
+    "Netherlands": "NED", "Mexico": "MEX", "United States": "USA", "USA": "USA",
+    "Croatia": "CRO", "Belgium": "BEL", "Uruguay": "URU", "Morocco": "MAR",
+    "Japan": "JPN", "South Korea": "KOR", "Korea Republic": "KOR",
+    "Canada": "CAN", "Colombia": "COL", "Senegal": "SEN", "Switzerland": "SUI",
+}
+
+
+def _team_abbr(name: str) -> str:
+    """A short 3-letter tag for a team (ESP, BAR, OVI) so each event row shows
+    which side it belongs to. Prefers a known code, else builds one from the
+    significant words."""
+    if name in _TEAM_ABBR:
+        return _TEAM_ABBR[name]
+    words = [w for w in (name or "").replace(".", " ").split()
+             if w.lower() not in {"de", "del", "la", "el", "fc", "cf", "cd", "ud", "rc"}]
+    if not words:
+        words = (name or "?").split() or ["?"]
+    if len(words) == 1:
+        return words[0][:3].upper()
+    initials = "".join(w[0] for w in words)[:3].upper()
+    if len(initials) < 3:
+        initials = (initials + words[0][1:])[:3].upper()
+    return initials
 
 
 def _center(d, text, y, font, fill):
@@ -329,18 +377,21 @@ def timeline_clip(match: Match, language: str, duration: float):
 
 
 # ── Unified frame: scoreboard (top) + event timeline (bottom), one screen ──
-def _unified_frame(match: Match, language: str, p: float):
+def _unified_frame(match: Match, _language: str, p: float):
     """Everything on ONE screen for the whole video: compact scoreboard at the
     top, then goals + cards revealed in chronological order below. The crowd
-    backdrop is baked in, so it never disappears (single continuous clip)."""
+    backdrop is baked in, so it never disappears (single continuous clip).
+
+    `_language` is kept for signature parity with the other clip builders even
+    though the timeline title (the only localized string) was removed."""
     img = _canvas().convert("RGBA")
     d = ImageDraw.Draw(img)
 
-    # Header.
+    # Header: league name + date, both in white. Date as DD/MM/YYYY.
     header = _clean_competition(match.competition).upper() or "FÚTBOL"
-    _center(d, header, _sy(0.06), _font(_fs(0.034)), _MUTED)
+    _center(d, header, _sy(0.06), _font(_fs(0.034)), _WHITE)
     if match.date:
-        _center(d, match.date, _sy(0.095), _font(_fs(0.024)), _MUTED)
+        _center(d, _fmt_date(match.date), _sy(0.095), _font(_fs(0.024)), _WHITE)
 
     # Crests above the score.
     home_crest, away_crest = _crest(match.home_logo), _crest(match.away_logo)
@@ -374,9 +425,9 @@ def _unified_frame(match: Match, language: str, p: float):
     # staying 102px (min(W,H)) and crashing into the row below.
     score_px = _sy(score_frac)
     big = _font(score_px)
-    _center_at(d, str(hg), home_cx, score_y, big, _ACCENT)
-    _center(d, "-", score_y + _sy(0.03), _font(int(score_px * 0.74)), _MUTED)
-    _center_at(d, str(ag), away_cx, score_y, big, _ACCENT)
+    _center_at(d, str(hg), home_cx, score_y, big, _WHITE)
+    _center(d, "-", score_y + _sy(0.03), _font(int(score_px * 0.74)), _WHITE)
+    _center_at(d, str(ag), away_cx, score_y, big, _WHITE)
 
     # Team names + accent bar — placed below the ACTUAL BOTTOM of the score
     # digits. _center/_center_at draw text with its TOP at y, so the digits
@@ -385,7 +436,7 @@ def _unified_frame(match: Match, language: str, p: float):
     score_bottom = score_y + (d.textbbox((0, 0), str(hg) or "0", font=big)[3])
     names_y_px = score_bottom + _sy(0.03)
     _center(d, f"{match.home.upper()}  -  {match.away.upper()}",
-            names_y_px, _font(_fs(0.028)), _TEXT)
+            names_y_px, _font(_fs(0.028)), _WHITE)
     bar_y_px = names_y_px + _sy(0.045)
     bar_w = int(W * 0.55)
     d.rectangle([(W - bar_w) // 2, bar_y_px, (W + bar_w) // 2, bar_y_px + max(4, _sy(0.004))],
@@ -410,16 +461,12 @@ def _unified_frame(match: Match, language: str, p: float):
         events = sorted((goals + cards)[:_MAX_EVENTS], key=lambda e: e[0])
 
     if events:
-        # Anchor the timeline below the accent bar (which now floats with the
-        # names) but never above its baseline fraction, so it stays put on a
-        # normal frame yet is pushed down if a tall score needs the room.
-        tl_title = max(bar_y_px + _sy(0.04), _sy(tl_title_y))
-        _center(d, "MINUTO A MINUTO" if language == "es" else "TIMELINE",
-                tl_title, _font(_fs(0.026)), _ACCENT)
+        # No timeline title (removed) — the rows start right below the accent
+        # bar. Keep a floor fraction so a tall score can still push them down.
         reveal_each = 1.0 / len(events)
         row_font = _font(_fs(0.026))
         box_w, box_h = _fs(0.024), _fs(0.032)
-        top_y = max(tl_title + _sy(0.05), _sy(tl_top_y))
+        top_y = max(bar_y_px + _sy(0.06), _sy(tl_top_y))
 
         # Column layout. The 16:9 frame is wide but SHORT (only ~30% of its
         # height is left for rows), so it goes two-column much sooner and the
@@ -435,7 +482,7 @@ def _unified_frame(match: Match, language: str, p: float):
         avail = H - top_y - _sy(0.03)
         row_h = min(_sy(0.07), max(_sy(0.04), avail // max(per_col, 1)))
 
-        for i, (_, minute, kind, player, _team) in enumerate(events):
+        for i, (_, minute, kind, player, team) in enumerate(events):
             local = (p - i * reveal_each) / reveal_each
             if local <= 0:
                 continue
@@ -447,8 +494,14 @@ def _unified_frame(match: Match, language: str, p: float):
             y = top_y + row * row_h
             shade = tuple(int(_MUTED[k] + (_TEXT[k] - _MUTED[k]) * e) for k in range(3))
             _draw_event_icon(d, kind, x, y + 3, box_w, box_h)
-            label = f"{minute}'  {player}"
-            d.text((x + box_w + _sx(0.018), y), label, font=row_font, fill=shade)
+            # Each row shows the team tag (ESP, BAR) so you can tell at a glance
+            # which side the goal/card belongs to, even with the sound off.
+            tag = _team_abbr(team)
+            tx = x + box_w + _sx(0.018)
+            d.text((tx, y), tag, font=row_font, fill=_WHITE)
+            tag_w = d.textbbox((0, 0), tag, font=row_font)[2]
+            d.text((tx + tag_w + _sx(0.012), y), f"{minute}'  {player}",
+                   font=row_font, fill=shade)
 
     # Competition logo, bottom-right (World Cup / La Liga / ...).
     _paste_logo(img)

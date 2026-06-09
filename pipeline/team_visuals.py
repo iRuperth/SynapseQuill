@@ -85,10 +85,14 @@ def team_seed(team: str) -> int:
 
 
 # Appended to every prompt: FLUX renders garbled text/letters, so forbid them
-# strongly. Banners are described as plain colour blocks, never with words.
+# strongly. Banners are described as plain colour blocks, never with words. The
+# pitch-side advertising boards (where sponsor logos normally go) are explicitly
+# replaced with plain coloured flags so no garbled sponsor text appears.
 _NO_TEXT = ("absolutely NO text, NO letters, NO words, NO numbers, NO writing, "
             "NO banners with text, NO logos, NO crests, NO brand names, "
-            "plain coloured flags and scarves only")
+            "NO sponsor advertising boards, NO advertisement hoardings; "
+            "the pitch-side boards are covered with plain coloured team flags "
+            "instead of sponsors; plain coloured flags and scarves only")
 
 
 def crowd_prompt(team: str, visual_style: str, vertical: bool = True) -> str:
