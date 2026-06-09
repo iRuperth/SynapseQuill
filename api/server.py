@@ -1,5 +1,5 @@
 """
-server.py — SynapseQuill FastAPI backend.
+server.py — F88tball FastAPI backend.
 
 Endpoints (all under /api):
     GET    /api/health                         liveness
@@ -59,7 +59,7 @@ from core.brand_config import PROFILES_DIR, BrandProfile, list_profiles  # noqa:
 from pipeline.data_sources import get_data_source  # noqa: E402
 from pipeline.runner import run_match  # noqa: E402
 
-app = FastAPI(title="SynapseQuill API", version="0.1.0")
+app = FastAPI(title="F88tball API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -119,7 +119,7 @@ def _profile_or_404(profile_id: str) -> BrandProfile:
 # ── Health / config ──────────────────────────────────────────────────
 @app.get("/api/health")
 def health():
-    return {"ok": True, "service": "synapsequill"}
+    return {"ok": True, "service": "f88tball"}
 
 
 @app.get("/api/config/global")
@@ -194,6 +194,7 @@ def get_matches(profile_id: str, day: str | None = None):
             "home_logo": m.home_logo, "away_logo": m.away_logo,
             "finished": m.is_finished, "scoreline": m.scoreline,
             "competition": m.competition, "date": m.date,
+            "kickoff": m.kickoff,
         }
         for m in matches
     ]
@@ -592,6 +593,26 @@ def worldcup_calendar():
         raise HTTPException(status_code=502, detail=str(e)) from e
 
 
+@app.get("/api/worldcup/bracket")
+def worldcup_bracket():
+    """World Cup 2026 knockout bracket: skeleton now, fills in as matches play."""
+    from pipeline.wc_bracket import bracket
+    try:
+        return bracket()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@app.get("/api/worldcup/power-ranking")
+def worldcup_power_ranking():
+    """Power ranking of the 48 WC2026 teams by the official FIFA World Ranking."""
+    from pipeline.power_ranking import power_ranking
+    try:
+        return power_ranking()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
 @app.get("/api/profiles/{profile_id}/status")
 def status(profile_id: str):
     with _lock:
@@ -746,6 +767,13 @@ def agents_route(body: RouteRequest):
         raise HTTPException(status_code=502, detail=str(e)) from e
     _save_lab_history(body.profile_id, "agents", body.request, result)
     return {"request": body.request, "result": result}
+
+
+@app.get("/api/architecture")
+def architecture():
+    """Self-describing system map (APIs + flows) for the Architecture page."""
+    from core.architecture import describe
+    return describe()
 
 
 # ── Serve built frontend (production / Docker) ───────────────────────

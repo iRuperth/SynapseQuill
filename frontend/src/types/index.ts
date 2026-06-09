@@ -66,6 +66,53 @@ export interface CalendarSummary {
   days: CalendarDay[]
 }
 
+// ── World Cup knockout bracket ──────────────────────────────────────
+export interface BracketSlot {
+  label: string          // placeholder shown until resolved, e.g. "2A", "W74"
+  name: string | null    // real team once known
+  flag: string | null
+  score: number | null
+  winner: boolean
+}
+
+export interface BracketMatch {
+  num: number
+  round: string
+  date: string
+  time: string
+  status: string         // SCHEDULED | LIVE | FINISHED
+  team1: BracketSlot
+  team2: BracketSlot
+}
+
+export interface BracketRound {
+  key: string            // r32 | r16 | qf | sf | final | third
+  round: string
+  matches: BracketMatch[]
+}
+
+export interface Bracket {
+  rounds: BracketRound[]
+  updated_at: string
+}
+
+// ── Power ranking (FIFA World Ranking of the 48 WC2026 teams) ───────
+export interface PowerRankingRow {
+  pos: number        // display position 1..48 among WC teams
+  rank: number       // global FIFA rank
+  team: string
+  points: number
+  group: string
+  flag: string
+}
+
+export interface PowerRanking {
+  source: string
+  as_of: string
+  count: number
+  rows: PowerRankingRow[]
+}
+
 export interface Match {
   fixture_id: number
   status: string
@@ -79,6 +126,7 @@ export interface Match {
   scoreline: string
   competition?: string
   date?: string
+  kickoff?: string                  // full ISO datetime (UTC) for date + time
 }
 
 export interface MatchGoal {
@@ -170,4 +218,39 @@ export interface LabHistoryRecord {
   result: string
   meta?: Record<string, unknown>
   created_at?: string
+}
+
+// ── Architecture page (self-describing system map from /api/architecture) ──
+export interface ArchService {
+  name: string
+  easy: string
+  model: string
+  env: string
+  file: string
+  free: 'yes' | 'tier' | 'key' | 'local' | 'oauth'
+  detail: string
+}
+export interface ArchServiceGroup {
+  group: string
+  items: ArchService[]
+}
+export interface ArchStep {
+  easy: string
+  tech: string
+  file: string
+  detail: string
+}
+export interface ArchFlow {
+  id: string
+  title: string
+  easy: string
+  input: string
+  output: string
+  orchestrator: string
+  endpoint: string
+  steps: ArchStep[]
+}
+export interface Architecture {
+  services: ArchServiceGroup[]
+  flows: ArchFlow[]
 }

@@ -2,16 +2,21 @@
 import axios from 'axios'
 import type {
   AgentRouteResult,
+  Architecture,
+  Bracket,
   CalendarSummary,
   ContentRecord, FinanceResult, FreeformResult, GenerationStatus, GlobalConfig,
   LabHistoryRecord, Match,
-  MatchDetail, Profile, ProfileSummary, ScienceResult,
+  MatchDetail, PowerRanking, Profile, ProfileSummary, ScienceResult,
 } from '../types'
 
 const http = axios.create({ baseURL: '/api' })
 
 export const getGlobalConfig = () =>
   http.get<GlobalConfig>('/config/global').then((r) => r.data)
+
+export const getArchitecture = () =>
+  http.get<Architecture>('/architecture').then((r) => r.data)
 
 export const listProfiles = () =>
   http.get<ProfileSummary[]>('/profiles').then((r) => r.data)
@@ -54,6 +59,12 @@ export const generateDigest = (id: string, opts?: { day?: string; format?: strin
 
 export const getWorldCupCalendar = () =>
   http.get<CalendarSummary>('/worldcup/calendar').then((r) => r.data)
+
+export const getWorldCupBracket = () =>
+  http.get<Bracket>('/worldcup/bracket').then((r) => r.data)
+
+export const getPowerRanking = () =>
+  http.get<PowerRanking>('/worldcup/power-ranking').then((r) => r.data)
 
 export const getStatus = (id: string) =>
   http.get<GenerationStatus>(`/profiles/${id}/status`).then((r) => r.data)
