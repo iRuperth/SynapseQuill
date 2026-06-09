@@ -1,24 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { cancelGeneration, generate, generateDigest, getMatchDetail, getMatches, getStatus } from '../api/client'
+import { cancelGeneration, generate, generateDigest, getContent, getMatchDetail, getMatches, getStatus } from '../api/client'
 import { useProfile } from '../components/useProfile'
+import { useT } from '../i18n/useT'
 import type { GenerationStatus, Match, MatchDetail } from '../types'
 
-// Friendly Spanish label for each pipeline step.
-const STEP_LABEL: Record<string, string> = {
-  start: 'Preparando…',
-  enrich: 'Buscando goleadores…',
-  narrate: 'Escribiendo la narración…',
-  guardrail: 'Verificando los datos…',
-  metadata: 'Generando título y etiquetas…',
-  media: 'Creando las imágenes…',
-  voice: 'Grabando la voz y subtítulos…',
-  video: 'Montando el vídeo…',
-  social: 'Generando texto para redes…',
-  upload: 'Subiendo a YouTube…',
-  done: 'Casi listo…',
-}
+// Pipeline steps that map to a friendly catalog label (matches.step.*).
+const STEP_KEYS = [
+  'start', 'enrich', 'narrate', 'guardrail', 'metadata',
+  'media', 'voice', 'video', 'social', 'upload', 'done',
+]
 
 export default function Matches() {
+  const t = useT()
   const { active } = useProfile()
   // Empty day = let the backend show the latest finished matches of the
   // configured competition (so La Liga 2023 / past seasons show up too).
@@ -28,15 +21,26 @@ export default function Matches() {
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<GenerationStatus>({ state: 'idle' })
   const [format, setFormat] = useState<string>('reel')
+  // Fixture ids that already have a generated video (→ "Created" instead of "Generate").
+  const [createdIds, setCreatedIds] = useState<Set<number>>(new Set())
   const poll = useRef<number | null>(null)
+
+  async function loadCreated() {
+    if (!active) return
+    try {
+      const content = await getContent(active)
+      setCreatedIds(new Set(content.map((c) => c.fixture_id).filter((x): x is number => !!x)))
+    } catch { /* ignore — the "Created" badge is best-effort */ }
+  }
 
   async function load() {
     if (!active) return
     setLoading(true); setError('')
     try {
       setMatches(await getMatches(active, day || undefined))
+      loadCreated()
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? 'No se pudieron cargar los partidos. ¿Falta APIFOOTBALL_KEY?')
+      setError(e?.response?.data?.detail ?? t('matches.loadError'))
       setMatches([])
     } finally {
       setLoading(false)
@@ -56,20 +60,21 @@ export default function Matches() {
       setStatus(s)
       if (s.state === 'done' || s.state === 'error' || s.state === 'idle') {
         if (poll.current) window.clearInterval(poll.current)
+        if (s.state === 'done') loadCreated()   // refresh the "Created" badges
       }
     }, 1500)
   }
 
   async function onGenerate(m: Match) {
     if (!active) return
-    setStatus({ state: 'running', step: 'start', message: 'Iniciando...' })
+    setStatus({ state: 'running', step: 'start', message: t('matches.starting') })
     await generate(active, m.fixture_id, { do_video: true, do_upload: false, format })
     startPolling()
   }
 
   async function onDigest() {
     if (!active) return
-    setStatus({ state: 'running', step: 'start', message: 'Preparando resumen del día...' })
+    setStatus({ state: 'running', step: 'start', message: t('matches.preparingDigest') })
     await generateDigest(active, { day: day || undefined, format })
     startPolling()
   }
@@ -78,53 +83,55 @@ export default function Matches() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Partidos</h1>
+      <h1 style={{ marginTop: 0 }}>{t('matches.title')}</h1>
       <p style={{ color: 'var(--text-muted)' }}>
-        Elige un partido finalizado y genera su resumen en vídeo (narración + imágenes + subtítulos).
-        Por defecto se muestran los últimos partidos; puedes filtrar por fecha.
+        {t('matches.intro')}
       </p>
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', margin: '16px 0', flexWrap: 'wrap' }}>
         <label style={{ display: 'grid', gap: 4 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Filtrar por fecha (opcional)</span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('matches.filterByDate')}</span>
           <input type="date" value={day} onChange={(e) => setDay(e.target.value)}
             style={inputStyle} />
         </label>
         <label style={{ display: 'grid', gap: 4 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Formato</span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('matches.format')}</span>
           <select value={format} onChange={(e) => setFormat(e.target.value)} style={inputStyle}>
-            <option value="reel">Reel (vertical, &lt;3 min)</option>
-            <option value="youtube">YouTube (horizontal, 5-8 min)</option>
+            <option value="reel">{t('matches.format.reel')}</option>
+            <option value="youtube">{t('matches.format.youtube')}</option>
           </select>
         </label>
-        {day && <button onClick={() => setDay('')} style={{ ...btnStyle, background: 'var(--bg-elevated)' }}>Ver últimos</button>}
-        <button onClick={load} style={btnStyle}>Actualizar</button>
+        {day && <button onClick={() => setDay('')} style={{ ...btnStyle, background: 'var(--bg-elevated)' }}>{t('matches.viewLatest')}</button>}
+        <button onClick={load} style={btnStyle}>{t('matches.refresh')}</button>
         <button onClick={onDigest} disabled={busy}
           style={{ ...btnStyle, background: 'var(--accent)', color: '#04201c', opacity: busy ? 0.5 : 1 }}>
-          🎬 Resumen del día
+          🎬 {t('matches.dayDigest')}
         </button>
       </div>
 
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: -4 }}>
-        {day ? `Mostrando partidos del ${day}` : 'Mostrando los últimos partidos finalizados'}
-        {' · '}El <strong>Resumen del día</strong> junta todos los partidos {day ? `del ${day}` : 'del último día'} en un vídeo.
+        {day ? t('matches.showingMatchesOn', { day }) : t('matches.showingLatest')}
+        {' · '}{t('matches.digestHintBefore')} <strong>{t('matches.dayDigest')}</strong>{' '}
+        {day ? t('matches.digestHintAfterDay', { day }) : t('matches.digestHintAfterLatest')}
       </p>
 
       {error && <div style={errorBox}>{error}</div>}
-      {loading && <p>Cargando…</p>}
+      {loading && <p>{t('common.loading')}</p>}
 
       {busy && (
         <div style={statusBox}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
             <span style={{ fontSize: 17 }}>
-              🎬 <strong>Generando vídeo…</strong>
+              🎬 <strong>{t('matches.generatingVideo')}</strong>
               <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
-                {STEP_LABEL[status.step ?? ''] ?? status.message}
+                {status.step && STEP_KEYS.includes(status.step)
+                  ? t(`matches.step.${status.step}`)
+                  : status.message}
               </span>
             </span>
             <button onClick={() => active && cancelGeneration(active)}
               style={{ ...btnStyle, background: 'transparent', border: '1px solid var(--border)', padding: '4px 10px' }}>
-              Cancelar
+              {t('common.cancel')}
             </button>
           </div>
           {/* Progress bar */}
@@ -142,26 +149,28 @@ export default function Matches() {
       )}
       {status.state === 'done' && (
         <div style={{ ...statusBox, borderColor: 'var(--accent)' }}>
-          ✅ Listo: {status.result?.scoreline}. Mira la <strong>Biblioteca</strong> para verlo y publicarlo.
+          ✅ {t('matches.done')}: {status.result?.scoreline}. {t('matches.doneSeeLibraryBefore')} <strong>{t('nav.library')}</strong> {t('matches.doneSeeLibraryAfter')}
         </div>
       )}
 
       <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
         {matches.map((m) => (
           <MatchRow key={m.fixture_id} profileId={active} match={m}
-            busy={busy} onGenerate={onGenerate} />
+            busy={busy} created={createdIds.has(m.fixture_id)} onGenerate={onGenerate} />
         ))}
         {!loading && !matches.length && !error && (
-          <p style={{ color: 'var(--text-muted)' }}>No hay partidos ese día.</p>
+          <p style={{ color: 'var(--text-muted)' }}>{t('matches.noMatches')}</p>
         )}
       </div>
     </div>
   )
 }
 
-function MatchRow({ profileId, match: m, busy, onGenerate }: {
-  profileId: string; match: Match; busy: boolean; onGenerate: (m: Match) => void
+function MatchRow({ profileId, match: m, busy, created, onGenerate }: {
+  profileId: string; match: Match; busy: boolean; created: boolean
+  onGenerate: (m: Match) => void
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState<MatchDetail | null>(null)
   const [loading, setLoading] = useState(false)
@@ -177,13 +186,15 @@ function MatchRow({ profileId, match: m, busy, onGenerate }: {
     }
   }
 
+  const when = formatKickoff(m.kickoff || m.date)
+
   return (
     <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
       {/* Clickable header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', gap: 12, flexWrap: 'wrap' }}>
         <button onClick={toggle} style={{
           display: 'flex', alignItems: 'center', gap: 10, background: 'none',
-          border: 'none', color: 'var(--text)', cursor: 'pointer', textAlign: 'left', flex: 1,
+          border: 'none', color: 'var(--text)', cursor: 'pointer', textAlign: 'left', flex: 1, minWidth: 280,
         }}>
           <span style={{ color: 'var(--text-muted)', width: 14 }}>{open ? '▾' : '▸'}</span>
           {m.home_logo && <img src={m.home_logo} alt="" width={24} height={24} />}
@@ -192,17 +203,33 @@ function MatchRow({ profileId, match: m, busy, onGenerate }: {
           <strong>{m.away}</strong>
           {m.away_logo && <img src={m.away_logo} alt="" width={24} height={24} />}
           <span style={statusPill(m.finished)}>{m.status}</span>
+          {when && (
+            <span style={{ color: 'var(--text-muted)', fontSize: 12, marginLeft: 4 }}>
+              🗓 {when}
+            </span>
+          )}
         </button>
-        <button disabled={!m.finished || busy} onClick={() => onGenerate(m)}
-          style={{ ...btnStyle, opacity: !m.finished || busy ? 0.5 : 1, marginLeft: 12 }}>
-          Generar vídeo
-        </button>
+        {created ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+            <span style={{ color: 'var(--accent)', fontSize: 13, fontWeight: 600 }}>✅ {t('matches.created')}</span>
+            <button disabled={!m.finished || busy} onClick={() => onGenerate(m)}
+              style={{ ...btnStyle, background: 'var(--bg-elevated)', color: 'var(--text)',
+                border: '1px solid var(--border)', opacity: !m.finished || busy ? 0.5 : 1 }}>
+              {t('matches.regenerate')}
+            </button>
+          </div>
+        ) : (
+          <button disabled={!m.finished || busy} onClick={() => onGenerate(m)}
+            style={{ ...btnStyle, opacity: !m.finished || busy ? 0.5 : 1, marginLeft: 'auto' }}>
+            {t('matches.generateVideo')}
+          </button>
+        )}
       </div>
 
       {/* Expandable detail */}
       {open && (
         <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--border)' }}>
-          {loading && <p style={{ color: 'var(--text-muted)' }}>Cargando detalle…</p>}
+          {loading && <p style={{ color: 'var(--text-muted)' }}>{t('matches.loadingDetail')}</p>}
           {detail && (
             <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
               <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
@@ -213,7 +240,7 @@ function MatchRow({ profileId, match: m, busy, onGenerate }: {
 
               {detail.goals.length > 0 && (
                 <div>
-                  <div style={sectionTitle}>⚽ Goles</div>
+                  <div style={sectionTitle}>⚽ {t('matches.goals')}</div>
                   {detail.goals.map((g, i) => (
                     <div key={i} style={{ fontSize: 14, padding: '3px 0' }}>
                       <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{g.minute}'</span>{' '}
@@ -226,7 +253,7 @@ function MatchRow({ profileId, match: m, busy, onGenerate }: {
 
               {detail.cards.length > 0 && (
                 <div>
-                  <div style={sectionTitle}>🟨 Tarjetas</div>
+                  <div style={sectionTitle}>🟨 {t('matches.cards')}</div>
                   {detail.cards.map((c, i) => (
                     <div key={i} style={{ fontSize: 14, padding: '3px 0' }}>
                       <span style={{
@@ -241,7 +268,7 @@ function MatchRow({ profileId, match: m, busy, onGenerate }: {
               )}
 
               {!detail.goals.length && !detail.cards.length && (
-                <p style={{ color: 'var(--text-muted)' }}>Sin goles ni tarjetas registrados.</p>
+                <p style={{ color: 'var(--text-muted)' }}>{t('matches.noEvents')}</p>
               )}
             </div>
           )}
@@ -249,6 +276,19 @@ function MatchRow({ profileId, match: m, busy, onGenerate }: {
       )}
     </div>
   )
+}
+
+// Format a kickoff time. Accepts a full ISO datetime ("2026-06-08T19:00Z") and
+// shows local date + time; falls back to just the date for a "YYYY-MM-DD" value.
+function formatKickoff(value?: string): string {
+  if (!value) return ''
+  const hasTime = value.includes('T')
+  const d = new Date(value)
+  if (isNaN(d.getTime())) return value            // unparseable → show raw
+  const date = d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+  if (!hasTime) return date
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return `${date} · ${time}`
 }
 
 const sectionTitle: React.CSSProperties = {

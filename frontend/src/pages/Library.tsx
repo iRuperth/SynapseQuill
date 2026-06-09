@@ -4,9 +4,11 @@ import {
   getStatus, getUploadSchedule, publishVideo, scheduleUpload, uploadAllPending,
 } from '../api/client'
 import { useProfile } from '../components/useProfile'
+import { useT } from '../i18n/useT'
 import type { ContentRecord, GenerationStatus } from '../types'
 
 export default function Library() {
+  const t = useT()
   const { active } = useProfile()
   const [items, setItems] = useState<ContentRecord[]>([])
   const [status, setStatus] = useState<GenerationStatus>({ state: 'idle' })
@@ -34,15 +36,15 @@ export default function Library() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Biblioteca</h1>
-      <p style={{ color: 'var(--text-muted)' }}>Contenido generado para este perfil.</p>
+      <h1 style={{ marginTop: 0 }}>{t('library.title')}</h1>
+      <p style={{ color: 'var(--text-muted)' }}>{t('library.subtitle')}</p>
 
       {generating && (
         <div style={{
           padding: 14, marginBottom: 16, borderRadius: 12,
           background: 'var(--bg-elevated)', border: '1px solid var(--accent)',
         }}>
-          🎬 <strong>Se está generando el vídeo…</strong>
+          🎬 <strong>{t('library.generating')}</strong>
           <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>{status.message}</span>
           <div style={{ height: 10, borderRadius: 999, background: 'var(--bg)', overflow: 'hidden', marginTop: 8 }}>
             <div style={{
@@ -57,7 +59,7 @@ export default function Library() {
       {active && <UploadPanel profileId={active} onChanged={reload} />}
 
       {!items.length && !generating &&
-        <p style={{ color: 'var(--text-muted)' }}>Aún no hay contenido generado.</p>}
+        <p style={{ color: 'var(--text-muted)' }}>{t('library.empty')}</p>}
 
       <div style={{ display: 'grid', gap: 14, marginTop: 16 }}>
         {items.map((it) => (
@@ -70,6 +72,7 @@ export default function Library() {
 
 // ── Publication panel: bulk upload + scheduled-upload queue ──────────
 function UploadPanel({ profileId, onChanged }: { profileId: string; onChanged: () => void }) {
+  const t = useT()
   const [pending, setPending] = useState<string[]>([])
   const [schedule, setSchedule] = useState<Awaited<ReturnType<typeof getUploadSchedule>>>([])
   const [busy, setBusy] = useState(false)
@@ -82,15 +85,17 @@ function UploadPanel({ profileId, onChanged }: { profileId: string; onChanged: (
   useEffect(load, [load])
 
   async function onBulk() {
-    if (!pending.length || !confirm(`¿Subir ${pending.length} vídeo(s) a YouTube ahora?`)) return
+    if (!pending.length || !confirm(t('library.upload.confirmBulk', { count: pending.length }))) return
     setBusy(true); setMsg('')
     try {
       const r = await uploadAllPending(profileId)
       const fails = r.results.filter((x) => !x.ok)
-      setMsg(fails.length ? `Subidos ${r.uploaded.length}, ${fails.length} con error` : `✅ Subidos ${r.uploaded.length}`)
+      setMsg(fails.length
+        ? t('library.upload.bulkPartial', { uploaded: r.uploaded.length, failed: fails.length })
+        : t('library.upload.bulkOk', { uploaded: r.uploaded.length }))
       load(); onChanged()
     } catch (e: any) {
-      setMsg(e?.response?.data?.detail ?? 'Error al subir')
+      setMsg(e?.response?.data?.detail ?? t('library.upload.bulkError'))
     } finally { setBusy(false) }
   }
 
@@ -102,23 +107,22 @@ function UploadPanel({ profileId, onChanged }: { profileId: string; onChanged: (
       background: 'var(--bg-surface)', border: '1px solid var(--border)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <strong style={{ fontSize: 15 }}>📤 Publicación a YouTube</strong>
+        <strong style={{ fontSize: 15 }}>📤 {t('library.upload.heading')}</strong>
         <button onClick={onBulk} disabled={busy || !pending.length} style={{
           padding: '8px 14px', borderRadius: 8, border: 'none', fontWeight: 600,
           cursor: busy || !pending.length ? 'not-allowed' : 'pointer',
           opacity: busy || !pending.length ? 0.6 : 1, background: '#ff0033', color: 'white',
         }}>
-          {busy ? 'Subiendo…' : `Subir todos los pendientes (${pending.length})`}
+          {busy ? t('library.upload.uploading') : t('library.upload.uploadAll', { count: pending.length })}
         </button>
         {msg && <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{msg}</span>}
       </div>
       <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '8px 0 0' }}>
-        Con la subida automática activada (Ajustes / .env) cada vídeo nuevo se publica solo.
-        También puedes programar cada vídeo a una hora desde su tarjeta.
+        {t('library.upload.autoNote')}
       </p>
       {upcoming.length > 0 && (
         <div style={{ marginTop: 12, display: 'grid', gap: 6 }}>
-          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Programados:</span>
+          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('library.upload.scheduledLabel')}</span>
           {upcoming.map((s) => (
             <div key={s.content_id} style={{
               display: 'flex', alignItems: 'center', gap: 10, fontSize: 13,
@@ -129,7 +133,7 @@ function UploadPanel({ profileId, onChanged }: { profileId: string; onChanged: (
               <button onClick={() => cancelScheduledUpload(profileId, s.content_id).then(load)}
                 style={{ marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)',
                          borderRadius: 6, color: '#ff9db1', cursor: 'pointer', padding: '2px 8px' }}>
-                Cancelar
+                {t('common.cancel')}
               </button>
             </div>
           ))}
@@ -141,19 +145,21 @@ function UploadPanel({ profileId, onChanged }: { profileId: string; onChanged: (
 
 // Schedule a single content item to upload at a chosen local datetime.
 export function useScheduleUpload(profileId: string) {
+  const t = useT()
   return useCallback(async (contentId: string) => {
-    const v = prompt('¿A qué hora subir? (formato: 2026-06-10 18:00)')
+    const v = prompt(t('library.schedule.prompt'))
     if (!v) return
     const when = new Date(v.replace(' ', 'T')).getTime() / 1000
-    if (Number.isNaN(when)) { alert('Fecha no válida'); return }
+    if (Number.isNaN(when)) { alert(t('library.schedule.invalidDate')); return }
     await scheduleUpload(profileId, contentId, when)
-    alert('Programado ✓')
-  }, [profileId])
+    alert(t('library.schedule.done'))
+  }, [profileId, t])
 }
 
 function Card({ item, profileId, onChanged }: {
   item: ContentRecord; profileId: string; onChanged: () => void
 }) {
+  const t = useT()
   const [open, setOpen] = useState(false)          // minimized by default
   const [privacy, setPrivacy] = useState('private')
   const [publishing, setPublishing] = useState(false)
@@ -161,17 +167,18 @@ function Card({ item, profileId, onChanged }: {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const schedule = useScheduleUpload(profileId)
 
-  const title = item.metadata?.title ?? item.scoreline ?? (item.day ? `Resumen ${item.day}` : 'Vídeo')
+  const title = item.metadata?.title ?? item.scoreline
+    ?? (item.day ? t('library.card.digestTitle', { day: item.day }) : t('library.card.fallbackTitle'))
 
   async function onPublish() {
     if (item.fixture_id == null) return
     setPublishing(true); setMsg(null)
     try {
       const r = await publishVideo(profileId, item.fixture_id, privacy)
-      setMsg({ ok: true, text: `Publicado (${r.privacy})` })
+      setMsg({ ok: true, text: t('library.card.publishedWith', { privacy: r.privacy }) })
       onChanged()
     } catch (e: any) {
-      setMsg({ ok: false, text: e?.response?.data?.detail ?? 'No se pudo publicar' })
+      setMsg({ ok: false, text: e?.response?.data?.detail ?? t('library.card.publishFailed') })
     } finally {
       setPublishing(false)
     }
@@ -179,7 +186,7 @@ function Card({ item, profileId, onChanged }: {
 
   async function onDelete(e: React.MouseEvent) {
     e.stopPropagation()
-    if (!item.id || !confirm(`¿Eliminar "${title}"?`)) return
+    if (!item.id || !confirm(t('library.card.confirmDelete', { title }))) return
     setDeleting(true)
     try {
       await deleteContent(profileId, item.id)
@@ -200,10 +207,10 @@ function Card({ item, profileId, onChanged }: {
           <span style={{ color: 'var(--text-muted)', width: 14 }}>{open ? '▾' : '▸'}</span>
           {item.video_url ? '🎬' : '📄'}
           <strong style={{ fontSize: 16 }}>{title}</strong>
-          {item.youtube_url && <span style={{ color: 'var(--accent)', fontSize: 12 }}>· en YouTube</span>}
+          {item.youtube_url && <span style={{ color: 'var(--accent)', fontSize: 12 }}>{t('library.card.onYouTube')}</span>}
         </button>
         <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{item.generated_at}</span>
-        <button onClick={onDelete} disabled={deleting} title="Eliminar"
+        <button onClick={onDelete} disabled={deleting} title={t('common.delete')}
           style={{
             background: 'transparent', border: '1px solid var(--border)', borderRadius: 8,
             color: '#ff9db1', cursor: 'pointer', padding: '4px 10px',
@@ -246,21 +253,21 @@ function Card({ item, profileId, onChanged }: {
               {item.youtube_url ? (
                 <a href={item.youtube_url} target="_blank" rel="noreferrer"
                   style={{ color: 'var(--accent)', fontWeight: 600 }}>
-                  ✅ Publicado en YouTube ↗
+                  {t('library.card.publishedLink')}
                 </a>
               ) : (
                 <>
                   <select value={privacy} onChange={(e) => setPrivacy(e.target.value)} style={select}>
-                    <option value="private">Privado</option>
-                    <option value="unlisted">Oculto</option>
-                    <option value="public">Público</option>
+                    <option value="private">{t('library.card.privacyPrivate')}</option>
+                    <option value="unlisted">{t('library.card.privacyUnlisted')}</option>
+                    <option value="public">{t('library.card.privacyPublic')}</option>
                   </select>
                   <button onClick={onPublish} disabled={publishing} style={publishBtn}>
-                    {publishing ? 'Publicando…' : 'Enviar a YouTube'}
+                    {publishing ? t('library.card.publishing') : t('library.card.publish')}
                   </button>
                   {item.id && (
-                    <button onClick={() => schedule(item.id!)} style={select} title="Subir a una hora">
-                      🕒 Programar
+                    <button onClick={() => schedule(item.id!)} style={select} title={t('library.card.scheduleTitle')}>
+                      🕒 {t('library.card.schedule')}
                     </button>
                   )}
                 </>

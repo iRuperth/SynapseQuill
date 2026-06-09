@@ -4,6 +4,7 @@ import {
   getScienceTopics, routeAgent,
 } from '../api/client'
 import { useProfile } from '../components/useProfile'
+import { useT } from '../i18n/useT'
 import type { LabHistoryRecord } from '../types'
 
 // "Laboratorio IA" — surfaces the advanced/expert features that previously
@@ -16,13 +17,14 @@ import type { LabHistoryRecord } from '../types'
 // history shown below, so past questions and answers can be revisited.
 
 type Tab = 'science' | 'finance' | 'agents'
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'science', label: '🔬 Ciencia (RAG arXiv + grafo)' },
-  { key: 'finance', label: '📈 Mercados financieros' },
-  { key: 'agents', label: '🤖 Router multiagente' },
+const TABS: { key: Tab; icon: string; labelKey: string }[] = [
+  { key: 'science', icon: '🔬', labelKey: 'lab.tab.science' },
+  { key: 'finance', icon: '📈', labelKey: 'lab.tab.finance' },
+  { key: 'agents', icon: '🤖', labelKey: 'lab.tab.agents' },
 ]
 
 export default function Lab() {
+  const t = useT()
   const { active } = useProfile()
   const [tab, setTab] = useState<Tab>('science')
   // Bumped after each successful request so the history panel reloads.
@@ -31,15 +33,14 @@ export default function Lab() {
 
   return (
     <div>
-      <h1 style={{ marginTop: 0 }}>Laboratorio IA</h1>
+      <h1 style={{ marginTop: 0 }}>{t('lab.title')}</h1>
       <p style={{ color: 'var(--text-muted)', marginTop: -8 }}>
-        Funcionalidades avanzadas: RAG científico sobre arXiv con grafo de conocimiento,
-        noticias de mercados en vivo y enrutado multiagente.
+        {t('lab.subtitle')}
       </p>
       <div style={{ display: 'flex', gap: 8, margin: '16px 0 20px', flexWrap: 'wrap' }}>
-        {TABS.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={tabBtn(tab === t.key)}>
-            {t.label}
+        {TABS.map((tb) => (
+          <button key={tb.key} onClick={() => setTab(tb.key)} style={tabBtn(tab === tb.key)}>
+            {tb.icon} {t(tb.labelKey)}
           </button>
         ))}
       </div>
@@ -56,6 +57,7 @@ type FeatureProps = { profileId: string; onSaved: () => void }
 
 // ── Science: arXiv RAG + Graph RAG ──────────────────────────────────
 function Science({ profileId, onSaved }: FeatureProps) {
+  const t = useT()
   const [topic, setTopic] = useState('')
   const [language, setLanguage] = useState('es')
   const [useGraph, setUseGraph] = useState(true)
@@ -73,16 +75,14 @@ function Science({ profileId, onSaved }: FeatureProps) {
   return (
     <Panel>
       <p style={hint}>
-        Descarga papers de arXiv, los indexa con embeddings locales (gratis) y genera
-        una explicación divulgativa fundamentada. Con el grafo activado, además extrae
-        relaciones entre entidades (Graph RAG). Temas sugeridos del dominio deportivo:
+        {t('lab.science.hint')}
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        {topics.map((t) => (
-          <button key={t} onClick={() => setTopic(t)} style={chip(false)}>{t}</button>
+        {topics.map((tp) => (
+          <button key={tp} onClick={() => setTopic(tp)} style={chip(false)}>{tp}</button>
         ))}
       </div>
-      <input style={input} value={topic} placeholder="Tema científico (en inglés funciona mejor en arXiv)"
+      <input style={input} value={topic} placeholder={t('lab.science.topicPlaceholder')}
         onChange={(e) => setTopic(e.target.value)} />
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 10 }}>
         <select style={{ ...input, width: 120 }} value={language} onChange={(e) => setLanguage(e.target.value)}>
@@ -90,13 +90,13 @@ function Science({ profileId, onSaved }: FeatureProps) {
         </select>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 14 }}>
           <input type="checkbox" checked={useGraph} onChange={(e) => setUseGraph(e.target.checked)} />
-          Usar grafo de conocimiento (Graph RAG)
+          {t('lab.science.useGraph')}
         </label>
         <button onClick={go} disabled={loading || !topic.trim()} style={primaryBtn(loading || !topic.trim())}>
-          {loading ? 'Indexando arXiv…' : 'Explicar'}
+          {loading ? t('lab.science.indexing') : t('lab.science.explain')}
         </button>
       </div>
-      <Note>La primera consulta de un tema descarga e indexa papers — puede tardar.</Note>
+      <Note>{t('lab.science.note')}</Note>
       {error && <Err msg={error} />}
       {out && text && <Output text={text} />}
     </Panel>
@@ -105,6 +105,7 @@ function Science({ profileId, onSaved }: FeatureProps) {
 
 // ── Finance: live market news ───────────────────────────────────────
 function Finance({ profileId, onSaved }: FeatureProps) {
+  const t = useT()
   const [ticker, setTicker] = useState('')
   const { loading, error, out, run } = useAsync()
   const [text, setText] = useState('')
@@ -115,20 +116,19 @@ function Finance({ profileId, onSaved }: FeatureProps) {
   }
   return (
     <Panel>
-      <p style={hint}>Resumen de mercado y titulares recientes en vivo vía Finnhub (free tier).</p>
+      <p style={hint}>{t('lab.finance.hint')}</p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        {['AAPL', 'MSFT', 'TSLA', 'NVDA', 'GOOGL'].map((t) => (
-          <button key={t} onClick={() => setTicker(t)} style={chip(false)}>{t}</button>
+        {['AAPL', 'MSFT', 'TSLA', 'NVDA', 'GOOGL'].map((tk) => (
+          <button key={tk} onClick={() => setTicker(tk)} style={chip(false)}>{tk}</button>
         ))}
       </div>
       <div style={{ display: 'flex', gap: 12 }}>
-        <input style={input} value={ticker} placeholder="Ticker, p. ej. AAPL"
+        <input style={input} value={ticker} placeholder={t('lab.finance.tickerPlaceholder')}
           onChange={(e) => setTicker(e.target.value)} />
         <button onClick={go} disabled={loading || !ticker.trim()} style={primaryBtn(loading || !ticker.trim())}>
-          {loading ? 'Consultando…' : 'Ver mercado'}
+          {loading ? t('lab.finance.loading') : t('lab.finance.go')}
         </button>
       </div>
-      <Note>Requiere FINNHUB_API_KEY en el entorno.</Note>
       {error && <Err msg={error} />}
       {out && text && <Output text={text} />}
     </Panel>
@@ -137,6 +137,7 @@ function Finance({ profileId, onSaved }: FeatureProps) {
 
 // ── Agents: multi-agent supervisor routing ──────────────────────────
 function Agents({ profileId, onSaved }: FeatureProps) {
+  const t = useT()
   const [request, setRequest] = useState('')
   const { loading, error, out, run } = useAsync()
   const [text, setText] = useState('')
@@ -148,23 +149,22 @@ function Agents({ profileId, onSaved }: FeatureProps) {
   return (
     <Panel>
       <p style={hint}>
-        Escribe una petición libre. Un supervisor LangGraph la enruta al agente
-        especializado adecuado (deportes, social, ciencia o finanzas) y devuelve su respuesta.
+        {t('lab.agents.hint')}
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         {[
-          'Escribe un tweet sobre la final de Champions',
-          'Explica los modelos de goles esperados (xG)',
-          'Resume las noticias de mercado de Apple',
+          t('lab.agents.example1'),
+          t('lab.agents.example2'),
+          t('lab.agents.example3'),
         ].map((q) => (
           <button key={q} onClick={() => setRequest(q)} style={chip(false)}>{q}</button>
         ))}
       </div>
       <textarea style={{ ...input, minHeight: 90, resize: 'vertical' }} value={request}
-        placeholder="Tu petición de contenido…" onChange={(e) => setRequest(e.target.value)} />
+        placeholder={t('lab.agents.placeholder')} onChange={(e) => setRequest(e.target.value)} />
       <button onClick={go} disabled={loading || !request.trim()}
         style={{ ...primaryBtn(loading || !request.trim()), marginTop: 10 }}>
-        {loading ? 'Enrutando…' : 'Enviar al router'}
+        {loading ? t('lab.agents.routing') : t('lab.agents.go')}
       </button>
       {error && <Err msg={error} />}
       {out && text && <Output text={text} />}
@@ -173,14 +173,15 @@ function Agents({ profileId, onSaved }: FeatureProps) {
 }
 
 // ── History: every Lab + free-topic request, newest first ───────────
-const KIND_META: Record<string, { icon: string; label: string }> = {
-  science: { icon: '🔬', label: 'Ciencia' },
-  finance: { icon: '📈', label: 'Mercado' },
-  agents: { icon: '🤖', label: 'Router' },
-  freeform: { icon: '✍️', label: 'Tema libre' },
+const KIND_META: Record<string, { icon: string; labelKey: string }> = {
+  science: { icon: '🔬', labelKey: 'lab.kind.science' },
+  finance: { icon: '📈', labelKey: 'lab.kind.finance' },
+  agents: { icon: '🤖', labelKey: 'lab.kind.agents' },
+  freeform: { icon: '✍️', labelKey: 'lab.kind.freeform' },
 }
 
 function History({ profileId, reloadKey }: { profileId: string; reloadKey: number }) {
+  const t = useT()
   const [items, setItems] = useState<LabHistoryRecord[]>([])
 
   const load = useCallback(() => {
@@ -189,18 +190,18 @@ function History({ profileId, reloadKey }: { profileId: string; reloadKey: numbe
   useEffect(load, [load, reloadKey])
 
   async function onDelete(id: string) {
-    if (!confirm('¿Eliminar esta entrada del historial?')) return
+    if (!confirm(t('lab.history.confirmDelete'))) return
     try { await deleteLabHistory(profileId, id); load() } catch { /* ignore */ }
   }
 
   return (
     <div style={{ marginTop: 36, maxWidth: 760 }}>
-      <h2 style={{ fontSize: 18, marginBottom: 4 }}>Historial</h2>
+      <h2 style={{ fontSize: 18, marginBottom: 4 }}>{t('lab.history.title')}</h2>
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 0 }}>
-        Peticiones anteriores del Laboratorio y de Tema libre, guardadas en este perfil.
+        {t('lab.history.subtitle')}
       </p>
       {!items.length && (
-        <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Aún no hay peticiones guardadas.</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>{t('lab.history.empty')}</p>
       )}
       <div style={{ display: 'grid', gap: 10 }}>
         {items.map((it) => <HistoryRow key={it.id} item={it} onDelete={() => onDelete(it.id)} />)}
@@ -210,8 +211,10 @@ function History({ profileId, reloadKey }: { profileId: string; reloadKey: numbe
 }
 
 function HistoryRow({ item, onDelete }: { item: LabHistoryRecord; onDelete: () => void }) {
+  const t = useT()
   const [open, setOpen] = useState(false)
-  const m = KIND_META[item.kind] ?? { icon: '•', label: item.kind }
+  const meta = KIND_META[item.kind]
+  const m = { icon: meta?.icon ?? '•', label: meta ? t(meta.labelKey) : item.kind }
   return (
     <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
@@ -229,7 +232,7 @@ function HistoryRow({ item, onDelete }: { item: LabHistoryRecord; onDelete: () =
           </strong>
         </button>
         <span style={{ color: 'var(--text-muted)', fontSize: 12, whiteSpace: 'nowrap' }}>{item.created_at}</span>
-        <button onClick={onDelete} title="Eliminar" style={{
+        <button onClick={onDelete} title={t('common.delete')} style={{
           background: 'transparent', border: '1px solid var(--border)', borderRadius: 8,
           color: '#ff9db1', cursor: 'pointer', padding: '3px 9px',
         }}>🗑</button>
@@ -245,6 +248,7 @@ function HistoryRow({ item, onDelete }: { item: LabHistoryRecord; onDelete: () =
 
 // ── Shared helpers ──────────────────────────────────────────────────
 function useAsync() {
+  const t = useT()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [out, setOut] = useState(false)
@@ -254,7 +258,7 @@ function useAsync() {
       const r = await fn(); setOut(true); return r
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(msg || 'Error en la petición'); return null
+      setError(msg || t('lab.requestError')); return null
     } finally { setLoading(false) }
   }
   return { loading, error, out, run }
