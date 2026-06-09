@@ -151,11 +151,6 @@ function ProfileSettings() {
               <option value="public">{t('settings.privacy.public')}</option>
             </select>
           </Field>
-          {profile.youtube.practice_mode && (
-            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-              {t('settings.practiceMode')}
-            </span>
-          )}
         </div>
       </div>
     </div>

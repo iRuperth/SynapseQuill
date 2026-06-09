@@ -117,9 +117,6 @@ function UploadPanel({ profileId, onChanged }: { profileId: string; onChanged: (
         </button>
         {msg && <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{msg}</span>}
       </div>
-      <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: '8px 0 0' }}>
-        {t('library.upload.autoNote')}
-      </p>
       {upcoming.length > 0 && (
         <div style={{ marginTop: 12, display: 'grid', gap: 6 }}>
           <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{t('library.upload.scheduledLabel')}</span>

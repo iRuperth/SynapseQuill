@@ -59,10 +59,6 @@ export const CATALOG: Catalog = {
   'settings.privacy.private': { es: 'Privado', en: 'Private' },
   'settings.privacy.unlisted': { es: 'Oculto (no listado)', en: 'Unlisted' },
   'settings.privacy.public': { es: 'Público', en: 'Public' },
-  'settings.practiceMode': {
-    es: 'Modo prueba activo (.env PRACTICE_MODE): todo se sube como privado.',
-    en: 'Practice mode on (.env PRACTICE_MODE): everything uploads as private.',
-  },
 
   // ── Architecture page ──
   'arch.title': { es: 'Arquitectura', en: 'Architecture' },
@@ -303,7 +299,6 @@ export const CATALOG: Catalog = {
   'library.upload.bulkOk': { es: '✅ Subidos {uploaded}', en: '✅ Uploaded {uploaded}' },
   'library.upload.bulkPartial': { es: 'Subidos {uploaded}, {failed} con error', en: 'Uploaded {uploaded}, {failed} failed' },
   'library.upload.bulkError': { es: 'Error al subir', en: 'Upload failed' },
-  'library.upload.autoNote': { es: 'Con la subida automática activada (Ajustes / .env) cada vídeo nuevo se publica solo. También puedes programar cada vídeo a una hora desde su tarjeta.', en: 'With auto-upload enabled (Settings / .env) every new video publishes itself. You can also schedule each video for a specific time from its card.' },
   'library.upload.scheduledLabel': { es: 'Programados:', en: 'Scheduled:' },
   'library.schedule.prompt': { es: '¿A qué hora subir? (formato: 2026-06-10 18:00)', en: 'What time to upload? (format: 2026-06-10 18:00)' },
   'library.schedule.invalidDate': { es: 'Fecha no válida', en: 'Invalid date' },
