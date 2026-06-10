@@ -10,6 +10,7 @@ needs no external assets. Returns a list of clips the assembler concatenates.
 """
 
 import os
+from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
@@ -17,6 +18,10 @@ from core.brand_config import BrandProfile
 
 from .match_monitor import Match
 from .video_format import REEL, VideoFormat
+
+# The F88tball brand logo, drawn bottom-center on every frame. Resolved from the
+# project root so it works regardless of the current working directory.
+_BRAND_LOGO = Path(__file__).resolve().parent.parent / "assets" / "logos" / "f88tball.png"
 
 # Canvas size — overridable per render via set_format(). Default = reel 9:16.
 W, H = REEL.width, REEL.height
@@ -73,16 +78,16 @@ def set_background(path) -> None:
 
 
 def set_logo(path) -> None:
-    """Load the competition logo (PNG, ideally with transparency) drawn in the
-    bottom-right corner of every frame. Pass a falsy value or a missing file to
-    show no logo. Scaled to ~14% of the frame width, keeping its aspect ratio."""
+    """Load the brand logo (PNG, ideally with transparency) drawn at the bottom
+    center of every frame. Pass a falsy value or a missing file to show no logo.
+    Scaled to ~32% of the frame width (big and clearly visible), keeping aspect."""
     global _LOGO
     _LOGO = None
     if not path:
         return
     try:
         logo = Image.open(path).convert("RGBA")
-        target_w = int(W * 0.14)
+        target_w = int(W * 0.32)
         ratio = target_w / logo.width
         _LOGO = logo.resize((target_w, max(1, int(logo.height * ratio))))
     except Exception:
@@ -526,5 +531,6 @@ def build_animated_clips(cfg: BrandProfile, match: Match, total: float,
     disappears mid-video, and the marker shows score + all goals/cards together.
     """
     set_background(background)
-    set_logo(getattr(cfg, "COMPETITION_LOGO", None))
+    # Always brand the video with the F88tball logo (not the competition logo).
+    set_logo(_BRAND_LOGO if _BRAND_LOGO.exists() else None)
     return [unified_clip(match, cfg.LANGUAGE, total)]
