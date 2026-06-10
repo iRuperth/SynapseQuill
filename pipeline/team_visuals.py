@@ -84,37 +84,49 @@ def team_seed(team: str) -> int:
     return zlib.crc32(team.encode("utf-8")) % 1_000_000
 
 
-# Appended to every prompt: FLUX renders garbled text/letters, so forbid them
-# strongly. Banners are described as plain colour blocks, never with words. The
-# pitch-side advertising boards (where sponsor logos normally go) are explicitly
-# replaced with plain coloured flags so no garbled sponsor text appears.
-_NO_TEXT = ("absolutely NO text, NO letters, NO words, NO numbers, NO writing, "
-            "NO banners with text, NO logos, NO crests, NO brand names, "
-            "NO sponsor advertising boards, NO advertisement hoardings; "
-            "the pitch-side boards are covered with plain coloured team flags "
-            "instead of sponsors; plain coloured flags and scarves only")
+# Appended to every prompt. FLUX renders garbled text/letters, so forbid them as
+# hard as possible AND remove every surface that invites text: NO advertising
+# boards, NO printed banners, NO stadium structure. Flags/scarves must be SOLID
+# single-colour blocks (a printed banner is what FLUX fills with fake letters).
+_NO_TEXT = ("the flags and scarves are SOLID plain single-colour fabric with NO "
+            "pattern; absolutely NO text, NO letters, NO words, NO numbers, NO "
+            "writing of any kind, NO printed banners, NO painted banners, NO "
+            "logos, NO crests, NO brand names, NO sponsors, NO advertising "
+            "boards, NO advertisement hoardings, NO signage, NO scoreboard, NO "
+            "billboards; if any fabric would show writing, make it a blank solid "
+            "colour instead")
+
+# Frame the shot as a CLOSE-UP of the supporters in the stands, not a wide
+# stadium view — we want faces, raised arms, scarves and flags filling the frame,
+# never the pitch, the structure or the empty seats.
+_CLOSEUP = ("tight CLOSE-UP of the supporters packed in the stands, faces and "
+            "raised arms filling the whole frame, shot from within the crowd at "
+            "eye level, NO view of the pitch, NO view of the field, NO stadium "
+            "architecture, NO empty seats, NO wide aerial shot")
 
 
 def crowd_prompt(team: str, visual_style: str, vertical: bool = True) -> str:
-    """Build a FLUX prompt for a packed crowd in `team`'s colours.
+    """Build a FLUX prompt for a tight close-up of a team's supporters.
 
-    Leads with large FLAGS and SCARVES (which FLUX renders cleanly) and pushes
-    jerseys to the background — jerseys are where FLUX invents garbled text.
+    Leads with the close-up framing + big SOLID flags and scarves (which FLUX
+    renders cleanly) and forbids every text-bearing surface.
     """
     comp = "vertical 9:16 composition" if vertical else "wide 16:9 composition"
     return (
-        f"{visual_style}, photorealistic packed stadium crowd at night waving MANY "
-        f"large {palette(team)}, raised scarves and big flags filling the frame, "
-        f"distant blurred sea of supporters, flares and confetti, vibrant colours, "
+        f"{visual_style}, photorealistic {_CLOSEUP}, ecstatic fans at night "
+        f"waving MANY large {palette(team)}, raised scarves and big solid-colour "
+        f"flags filling the frame, flares and confetti, vibrant colours, "
         f"{comp}, {_NO_TEXT}"
     )
 
 
 def generic_crowd_prompt(visual_style: str, vertical: bool = True) -> str:
-    """Fallback prompt for draws / unknown teams (the previous generic crowd)."""
+    """Fallback prompt for draws / unknown teams: a mixed-colours supporter
+    close-up (flags and shirts of several teams), no single side."""
     comp = "vertical 9:16 composition" if vertical else "wide 16:9 composition"
     return (
-        f"{visual_style}, photorealistic packed stadium crowd at night waving many "
-        f"large colourful flags and raised scarves filling the frame, distant "
-        f"blurred sea of fans, flares and confetti, vibrant colours, {comp}, {_NO_TEXT}"
+        f"{visual_style}, photorealistic {_CLOSEUP}, ecstatic fans at night "
+        f"waving many large solid-colour flags and raised scarves in MIXED team "
+        f"colours, supporters in shirts of several different teams, flares and "
+        f"confetti, vibrant colours, {comp}, {_NO_TEXT}"
     )
