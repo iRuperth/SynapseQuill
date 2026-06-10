@@ -43,7 +43,9 @@ def _subtitle_clips(subtitles: list[dict], total: float, fmt: VideoFormat):
 
     font = _font_path()
     w, h = fmt.width, fmt.height
-    base_y = int(h * (0.72 if fmt.vertical else 0.76))
+    # Sit the captions in a LOW safe band so they never overlap the scoreboard /
+    # event list above. The reel (tall) drops them lower than the wide format.
+    base_y = int(h * (0.80 if fmt.vertical else 0.80))
     font_size = int(min(w, h) * 0.072)                   # big, MrBeast-like
     box_h = int(font_size * 2.2)                          # vertical padding
     clips = []
