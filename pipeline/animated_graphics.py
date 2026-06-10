@@ -37,9 +37,11 @@ _WHITE = (255, 255, 255)   # team names, league and score: pure white for clarit
 # MoviePy masks, so no corrupt mp4s). Set via set_background().
 _BACKDROP: Image.Image | None = None
 
-# Optional competition logo (World Cup / La Liga / ...), drawn bottom-right.
-# Swap the whole tournament by pointing COMPETITION_LOGO at another file.
+# The F88tball brand logo, drawn bottom-center with a gentle pulse.
 _LOGO: Image.Image | None = None
+
+# Total clip duration (seconds), so the logo pulse has a real-time period.
+_TOTAL: float = 0.0
 
 
 def set_format(fmt: VideoFormat) -> None:
@@ -94,15 +96,37 @@ def set_logo(path) -> None:
         _LOGO = None
 
 
-def _paste_logo(img: Image.Image) -> None:
-    """Composite the competition logo at the BOTTOM CENTER, with a small margin.
+def _paste_logo(img: Image.Image, p: float = 0.0) -> None:
+    """Composite the F88tball logo at the BOTTOM CENTER with a gentle pulse: it
+    softly breathes (scale) and glows brighter and back over a ~2.4s cycle, so it
+    feels alive without being distracting. `p` is the clip progress (0..1).
     No-op when no logo is set."""
     if _LOGO is None:
         return
+    import math
+
+    # One full pulse every ~2.4s; phase derived from absolute time = p * total.
+    # We approximate time from p using the module-level _TOTAL when available.
+    t = p * (_TOTAL or 1.0)
+    wave = 0.5 + 0.5 * math.sin(2 * math.pi * (t / 2.4))   # 0..1, smooth
+
+    logo = _LOGO
+    # Brightness 0.92 -> 1.18 (a soft glow up and down).
+    glow = 0.92 + 0.26 * wave
+    logo = ImageEnhance.Brightness(logo).enhance(glow)
+    # Subtle breathing: scale 1.00 -> 1.05.
+    scale = 1.0 + 0.05 * wave
+    if scale != 1.0:
+        nw, nh = max(1, int(_LOGO.width * scale)), max(1, int(_LOGO.height * scale))
+        logo = logo.resize((nw, nh))
+
     margin = int(H * 0.035)
-    x = (W - _LOGO.width) // 2
-    y = H - _LOGO.height - margin
-    img.alpha_composite(_LOGO, (x, y))
+    # Keep the logo centered on the same anchor as it grows/shrinks.
+    cx = W // 2
+    base_bottom = H - margin
+    x = cx - logo.width // 2
+    y = base_bottom - logo.height
+    img.alpha_composite(logo, (x, y))
 
 
 def _canvas() -> Image.Image:
@@ -509,7 +533,7 @@ def _unified_frame(match: Match, _language: str, p: float):
                    font=row_font, fill=shade)
 
     # Competition logo, bottom-right (World Cup / La Liga / ...).
-    _paste_logo(img)
+    _paste_logo(img, p)
     return img
 
 
@@ -530,6 +554,8 @@ def build_animated_clips(cfg: BrandProfile, match: Match, total: float,
     A single continuous clip (no scene switch) means the crowd backdrop never
     disappears mid-video, and the marker shows score + all goals/cards together.
     """
+    global _TOTAL
+    _TOTAL = float(total)
     set_background(background)
     # Always brand the video with the F88tball logo (not the competition logo).
     set_logo(_BRAND_LOGO if _BRAND_LOGO.exists() else None)
