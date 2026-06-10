@@ -271,24 +271,44 @@ def _hashtag(text: str) -> str:
     return f"#{parts}" if parts else ""
 
 
-# Generic reach hashtags appended to every video to widen its audience.
-_GENERIC_TAGS = ["#Viral", "#ForYou", "#Shorts", "#Futbol", "#Football",
-                 "#Soccer", "#Highlights", "#Resumen", "#Goles"]
+# Generic reach hashtags appended to every video to widen its audience. The
+# brand (#F88tball) leads them.
+_GENERIC_TAGS = ["#F88tball", "#Viral", "#ForYou", "#Shorts", "#Futbol",
+                 "#Football", "#Soccer", "#Highlights", "#Resumen", "#Goles"]
+
+
+def _competition_tags(competition: str) -> list[str]:
+    """Well-formed competition hashtags (proper casing). World Cup expands to the
+    several tags fans search for."""
+    low = (competition or "").lower()
+    if "world cup" in low or "mundial" in low:
+        return ["#WorldCup2026", "#FIFAWorldCup", "#Mundial2026", "#2026"]
+    if "laliga" in low or "la liga" in low:
+        return ["#LaLiga"]
+    if "premier" in low:
+        return ["#PremierLeague"]
+    if "serie a" in low:
+        return ["#SerieA"]
+    if "bundesliga" in low:
+        return ["#Bundesliga"]
+    if "ligue 1" in low:
+        return ["#Ligue1"]
+    if "champions" in low:
+        return ["#ChampionsLeague"]
+    # Unknown competition: fall back to a CamelCase hashtag of its cleaned name.
+    return [_hashtag(competition)] if competition else []
 
 
 def build_tags(match: Match) -> list[str]:
-    """Deterministic hashtags: teams + countries + stadium + scorers, then the
-    generic reach tags (#Viral, #ForYou, ...). Exactly the set the user asked
-    for, in that order."""
+    """Deterministic hashtags: competition + teams + countries + stadium +
+    scorers, then the generic reach tags (#F88tball, #Viral, ...). Exactly the
+    set the user asked for, in that order."""
     tags: list[str] = []
-    # Competition (La Liga / World Cup ...).
-    if match.competition:
-        tags.append(_hashtag(match.competition))
+    # Competition (La Liga / World Cup ...), with proper casing.
+    tags += _competition_tags(match.competition)
     # Teams.
     tags += [_hashtag(match.home), _hashtag(match.away)]
-    # Country (and an explicit World Cup tag when it's the World Cup).
-    if "World Cup" in match.competition or "Mundial" in match.competition:
-        tags.append("#WorldCup2026")
+    # Country.
     if match.country:
         tags.append(_hashtag(match.country))
     # Stadium + city.
