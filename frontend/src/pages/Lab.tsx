@@ -118,8 +118,10 @@ function Finance({ profileId, onSaved }: FeatureProps) {
     <Panel>
       <p style={hint}>{t('lab.finance.hint')}</p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        {['AAPL', 'MSFT', 'TSLA', 'NVDA', 'GOOGL'].map((tk) => (
-          <button key={tk} onClick={() => setTicker(tk)} style={chip(false)}>{tk}</button>
+        {/* Football-flavoured tickers: listed clubs + sportswear brands. */}
+        {[['MANU', 'Man United'], ['JUVE.MI', 'Juventus'], ['BVB.DE', 'Dortmund'],
+          ['NKE', 'Nike'], ['ADS.DE', 'Adidas']].map(([tk, label]) => (
+          <button key={tk} onClick={() => setTicker(tk)} style={chip(false)}>{label}</button>
         ))}
       </div>
       <div style={{ display: 'flex', gap: 12 }}>
