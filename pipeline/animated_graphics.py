@@ -19,9 +19,10 @@ from core.brand_config import BrandProfile
 from .match_monitor import Match
 from .video_format import REEL, VideoFormat
 
-# The F88tball brand logo, drawn bottom-center on every frame. Resolved from the
-# project root so it works regardless of the current working directory.
-_BRAND_LOGO = Path(__file__).resolve().parent.parent / "assets" / "logos" / "f88tball.png"
+# The F88tball brand logo, drawn on every frame. The "-tight" copy has its empty
+# transparent margins cropped off, so it reads larger at the same width. Resolved
+# from the project root so it works regardless of the current working directory.
+_BRAND_LOGO = Path(__file__).resolve().parent.parent / "assets" / "logos" / "f88tball-tight.png"
 
 # Canvas size — overridable per render via set_format(). Default = reel 9:16.
 W, H = REEL.width, REEL.height
@@ -87,14 +88,14 @@ def set_background(path) -> None:
 def set_logo(path) -> None:
     """Load the brand logo (PNG, ideally with transparency) drawn at the bottom
     center of every frame. Pass a falsy value or a missing file to show no logo.
-    Scaled to ~32% of the frame width (big and clearly visible), keeping aspect."""
+    Scaled to ~42% of the frame width (big and clearly visible), keeping aspect."""
     global _LOGO
     _LOGO = None
     if not path:
         return
     try:
         logo = Image.open(path).convert("RGBA")
-        target_w = int(W * 0.32)
+        target_w = int(W * 0.42)
         ratio = target_w / logo.width
         _LOGO = logo.resize((target_w, max(1, int(logo.height * ratio))))
     except Exception:
@@ -556,10 +557,10 @@ def _unified_frame(match: Match, _language: str, p: float):
 
     # League / competition + date at the very bottom (white). Date DD/MM/YYYY.
     header = _clean_competition(match.competition).upper() or "FÚTBOL"
-    foot_y = _sy(0.93)
+    foot_y = _sy(0.925)
     _center(d, header, foot_y, _font(_fs(0.030)), _WHITE)
     if match.date:
-        _center(d, _fmt_date(match.date), foot_y + _sy(0.035), _font(_fs(0.022)), _MUTED)
+        _center(d, _fmt_date(match.date), foot_y + _sy(0.04), _font(_fs(0.028)), _WHITE)
 
     # F88tball brand logo, pulsing, at the top.
     _paste_logo(img, p)
