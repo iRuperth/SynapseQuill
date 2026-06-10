@@ -167,10 +167,11 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
     audio = AudioFileClip(str(audio_path))
     total = float(audio.duration)
 
-    # Background music (under the narration). Base 20%, swelling to 30% on goals.
-    # Volumes are configurable via .env (MUSIC_VOLUME / MUSIC_VOLUME_PEAK).
-    base = float(os.getenv("MUSIC_VOLUME", "0.20"))
-    peak = float(os.getenv("MUSIC_VOLUME_PEAK", "0.30"))
+    # Background music sits WELL BELOW the narration: a quiet bed at 8% that
+    # only nudges up to 12% on goals, so the voice always dominates. Tunable via
+    # .env (MUSIC_VOLUME / MUSIC_VOLUME_PEAK).
+    base = float(os.getenv("MUSIC_VOLUME", "0.08"))
+    peak = float(os.getenv("MUSIC_VOLUME_PEAK", "0.12"))
     music = _background_music(total, _goal_windows(subtitles), base, peak)
     if music is not None:
         audio = CompositeAudioClip([music, audio])   # narration on top of music
