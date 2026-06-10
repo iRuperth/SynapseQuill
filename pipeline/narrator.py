@@ -155,7 +155,8 @@ def _facts_block(match: Match) -> str:
 
 # Word-length guidance per narration style.
 _LENGTH = {
-    "full": "90-150 words.",
+    "full": "110-170 words, including the opening presentation and the closing "
+            "call to action.",
     "digest_short": "VERY SHORT: 30-45 words MAXIMUM — this is one match in a fast daily "
                     "digest. One punchy line on the result and the key goal(s). Do not list "
                     "every detail.",
@@ -174,10 +175,29 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
     lang = _LANG_NAME.get(language, "Spanish")
     length = _LENGTH.get(style, _LENGTH["full"])
 
+    # A single-match reel (style "full") opens by presenting the match and closes
+    # by inviting viewers to follow + like. The fast daily digest (very short
+    # per-match segments) skips this so each segment stays punchy.
+    if style == "full":
+        intro_outro = (
+            "- START by presenting the match in your own words, naming BOTH teams, "
+            "like the opening of a highlights recap (e.g. 'Bienvenidos al resumen "
+            "del partidazo entre X e Y' / 'Esto fue lo que pasó en el duelo entre "
+            "X e Y'). Vary the wording, keep it short and electric.\n"
+            "- FINISH, after the epic closing line, with a short, natural call to "
+            "action inviting viewers to FOLLOW the channel and leave a LIKE for "
+            "more highlights (e.g. 'si lo viviste con nosotros, síguenos y deja tu "
+            "like para más resúmenes'). Make it sound genuine, never spammy, and "
+            "vary it every time.\n"
+        )
+    else:
+        intro_outro = ""
+
     system = (system_preamble + "\n\n" if system_preamble else "") + (
         f"You are a LEGENDARY, white-hot football play-by-play commentator. Write ONLY in {lang}. "
         "Narrate like a live radio announcer whose heart is about to burst — MAXIMUM passion, "
         "drama and emotion in every line:\n"
+        f"{intro_outro}"
         "- Open with a gripping hook that sells the drama of the result in one breath.\n"
         "- Short, explosive, breathless sentences. Build unbearable tension before each goal, "
         "then EXPLODE. Vary the rhythm: whisper the build-up, scream the goal.\n"

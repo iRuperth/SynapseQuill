@@ -32,6 +32,7 @@ _ACCENT2 = (99, 102, 241)
 _TEXT = (231, 236, 247)
 _MUTED = (154, 166, 196)
 _WHITE = (255, 255, 255)   # team names, league and score: pure white for clarity
+_GOLD = (212, 175, 80)     # the logo's golden tone: the WINNER's score + name
 
 # Optional crowd backdrop, composited directly into every frame (robust: no
 # MoviePy masks, so no corrupt mp4s). Set via set_background().
@@ -42,6 +43,10 @@ _LOGO: Image.Image | None = None
 
 # Total clip duration (seconds), so the logo pulse has a real-time period.
 _TOTAL: float = 0.0
+
+# The brand logo sits at the TOP of the frame; the league/competition + date go
+# at the very bottom.
+_LOGO_AT_TOP = True
 
 
 def set_format(fmt: VideoFormat) -> None:
@@ -121,11 +126,12 @@ def _paste_logo(img: Image.Image, p: float = 0.0) -> None:
         logo = logo.resize((nw, nh))
 
     margin = int(H * 0.035)
-    # Keep the logo centered on the same anchor as it grows/shrinks.
     cx = W // 2
-    base_bottom = H - margin
     x = cx - logo.width // 2
-    y = base_bottom - logo.height
+    if _LOGO_AT_TOP:
+        y = margin
+    else:
+        y = (H - margin) - logo.height
     img.alpha_composite(logo, (x, y))
 
 
@@ -192,6 +198,17 @@ _TEAM_ABBR = {
     "Japan": "JPN", "South Korea": "KOR", "Korea Republic": "KOR",
     "Canada": "CAN", "Colombia": "COL", "Senegal": "SEN", "Switzerland": "SUI",
 }
+
+
+def _side_colors(match: Match) -> tuple[tuple, tuple]:
+    """(home_color, away_color) for the score + name: the WINNER is gold, the
+    other side white; a draw leaves both white."""
+    hg, ag = match.home_goals or 0, match.away_goals or 0
+    if hg > ag:
+        return _GOLD, _WHITE
+    if ag > hg:
+        return _WHITE, _GOLD
+    return _WHITE, _WHITE
 
 
 def _team_abbr(name: str) -> str:
@@ -416,60 +433,64 @@ def _unified_frame(match: Match, _language: str, p: float):
     img = _canvas().convert("RGBA")
     d = ImageDraw.Draw(img)
 
-    # Header: league name + date, both in white. Date as DD/MM/YYYY.
-    header = _clean_competition(match.competition).upper() or "FÚTBOL"
-    _center(d, header, _sy(0.06), _font(_fs(0.034)), _WHITE)
-    if match.date:
-        _center(d, _fmt_date(match.date), _sy(0.095), _font(_fs(0.024)), _WHITE)
-
-    # Crests above the score.
-    home_crest, away_crest = _crest(match.home_logo), _crest(match.away_logo)
-    home_cx, away_cx = _sx(0.30), _sx(0.70)
-    crest_top = _sy(0.135)
-    if home_crest:
-        img.alpha_composite(home_crest, (home_cx - home_crest.width // 2, crest_top))
-    if away_crest:
-        img.alpha_composite(away_crest, (away_cx - away_crest.width // 2, crest_top))
-
-    # Vertical layout differs by orientation: the 9:16 reel is tall, so it can
-    # spread the score/names/timeline down the frame; the 16:9 youtube frame is
-    # only ~1080px tall, so the same fractions would make a fixed-px score font
-    # overprint the names, bar and timeline header. Use a tighter set of anchors
-    # (and a height-scaled score font) when horizontal so nothing collides.
-    if _VERTICAL:
-        score_frac = 0.095
-        tl_title_y, tl_top_y = 0.41, 0.46
-    else:
-        score_frac = 0.052   # ~ same px as the reel, but as a height fraction
-        tl_title_y, tl_top_y = 0.63, 0.70
-
-    # Static final score, shown directly from the first frame (no count-up).
-    # Place the numbers BELOW the crests using their real height (+ a gap) so
-    # they never crowd the logo.
-    crest_h = max((c.height for c in (home_crest, away_crest) if c), default=0)
-    score_y = crest_top + crest_h + _sy(0.025)
+    home_color, away_color = _side_colors(match)
     hg = match.home_goals or 0
     ag = match.away_goals or 0
-    # Size the score from the HEIGHT so it shrinks with a short frame instead of
-    # staying 102px (min(W,H)) and crashing into the row below.
-    score_px = _sy(score_frac)
-    big = _font(score_px)
-    _center_at(d, str(hg), home_cx, score_y, big, _WHITE)
-    _center(d, "-", score_y + _sy(0.03), _font(int(score_px * 0.74)), _WHITE)
-    _center_at(d, str(ag), away_cx, score_y, big, _WHITE)
 
-    # Team names + accent bar — placed below the ACTUAL BOTTOM of the score
-    # digits. _center/_center_at draw text with its TOP at y, so the digits
-    # extend ~one glyph-height below score_y; measure it and add a clear gap so
-    # the names never overlap the big numbers, however tall the crests/score are.
-    score_bottom = score_y + (d.textbbox((0, 0), str(hg) or "0", font=big)[3])
-    names_y_px = score_bottom + _sy(0.03)
-    _center(d, f"{match.home.upper()}  -  {match.away.upper()}",
-            names_y_px, _font(_fs(0.028)), _WHITE)
-    bar_y_px = names_y_px + _sy(0.045)
+    # The F88tball logo sits at the top (drawn by _paste_logo). Start content
+    # below it so nothing overlaps.
+    top_pad = _sy(0.16)
+
+    # Crest · SCORE · "-" · SCORE · Crest, all on ONE horizontal line (like a TV
+    # broadcast scorebug). The winner's number is gold, the loser white; a draw
+    # leaves both white.
+    home_crest, away_crest = _crest(match.home_logo), _crest(match.away_logo)
+    score_px = _sy(0.10 if _VERTICAL else 0.052)
+    big = _font(score_px)
+    row_cy = top_pad + score_px // 2          # vertical center of the score row
+
+    # Lay the row out around the frame center: [crest][hg] - [ag][crest].
+    gap = _sx(0.04)
+    hg_s, ag_s = str(hg), str(ag)
+    hg_w = d.textbbox((0, 0), hg_s, font=big)[2]
+    ag_w = d.textbbox((0, 0), ag_s, font=big)[2]
+    dash_font = _font(int(score_px * 0.7))
+    dash_w = d.textbbox((0, 0), "-", font=dash_font)[2]
+    crest_w = (home_crest.width if home_crest else 0)
+    crest_w2 = (away_crest.width if away_crest else 0)
+    total_w = crest_w + gap + hg_w + gap + dash_w + gap + ag_w + gap + crest_w2
+    x = (W - total_w) // 2
+
+    if home_crest:
+        img.alpha_composite(home_crest, (x, int(row_cy - home_crest.height / 2)))
+    x += crest_w + gap
+    d.text((x, int(row_cy - score_px / 2)), hg_s, font=big, fill=home_color)
+    x += hg_w + gap
+    d.text((x, int(row_cy - score_px * 0.35)), "-", font=dash_font, fill=_WHITE)
+    x += dash_w + gap
+    d.text((x, int(row_cy - score_px / 2)), ag_s, font=big, fill=away_color)
+    x += ag_w + gap
+    if away_crest:
+        img.alpha_composite(away_crest, (x, int(row_cy - away_crest.height / 2)))
+
+    # Team names below the score row; the winner's name is gold too.
+    names_y_px = row_cy + score_px // 2 + _sy(0.03)
+    name_font = _font(_fs(0.030))
+    home_n, away_n = match.home.upper(), match.away.upper()
+    sep = "  -  "
+    hn_w = d.textbbox((0, 0), home_n, font=name_font)[2]
+    sep_w = d.textbbox((0, 0), sep, font=name_font)[2]
+    an_w = d.textbbox((0, 0), away_n, font=name_font)[2]
+    nx = (W - (hn_w + sep_w + an_w)) // 2
+    d.text((nx, names_y_px), home_n, font=name_font, fill=home_color)
+    d.text((nx + hn_w, names_y_px), sep, font=name_font, fill=_WHITE)
+    d.text((nx + hn_w + sep_w, names_y_px), away_n, font=name_font, fill=away_color)
+
+    bar_y_px = names_y_px + _sy(0.05)
     bar_w = int(W * 0.55)
     d.rectangle([(W - bar_w) // 2, bar_y_px, (W + bar_w) // 2, bar_y_px + max(4, _sy(0.004))],
                 fill=_ACCENT2)
+    tl_top_y = 0.46 if _VERTICAL else 0.70
 
     # Chronological events: goals + cards together, revealed one by one.
     events = []
@@ -506,9 +527,10 @@ def _unified_frame(match: Match, _language: str, p: float):
         per_col = (n + 1) // 2 if two_cols else n
         col_x = [_sx(0.08), _sx(0.54)]
 
-        # Size rows to the space actually available below the timeline title,
-        # capped so a short list doesn't stretch into huge gaps.
-        avail = H - top_y - _sy(0.03)
+        # Size rows to the space available between the score block and the
+        # bottom league/date strip (which starts at ~0.90), so events never
+        # overlap it.
+        avail = _sy(0.88) - top_y
         row_h = min(_sy(0.07), max(_sy(0.04), avail // max(per_col, 1)))
 
         for i, (_, minute, kind, player, team) in enumerate(events):
@@ -532,7 +554,14 @@ def _unified_frame(match: Match, _language: str, p: float):
             d.text((tx + tag_w + _sx(0.012), y), f"{minute}'  {player}",
                    font=row_font, fill=shade)
 
-    # Competition logo, bottom-right (World Cup / La Liga / ...).
+    # League / competition + date at the very bottom (white). Date DD/MM/YYYY.
+    header = _clean_competition(match.competition).upper() or "FÚTBOL"
+    foot_y = _sy(0.93)
+    _center(d, header, foot_y, _font(_fs(0.030)), _WHITE)
+    if match.date:
+        _center(d, _fmt_date(match.date), foot_y + _sy(0.035), _font(_fs(0.022)), _MUTED)
+
+    # F88tball brand logo, pulsing, at the top.
     _paste_logo(img, p)
     return img
 
