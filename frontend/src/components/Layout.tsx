@@ -2,8 +2,17 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { CalendarDays, FlaskConical, LayoutDashboard, ListVideo, Network, PenLine, Settings, Swords, Trophy } from 'lucide-react'
 import { useT } from '../i18n/useT'
 
-// Brand: the full F88tball logo (ball + wordmark) lives in /public/logo.png.
-const BRAND = { name: 'F88tball', logo: '/logo.png' }
+// Brand: the full F88tball logo (ball + wordmark). The wordmark is light, so a
+// dark-text variant is shown in light mode. CSS swaps them by theme (handles the
+// "auto" theme too, since data-theme is always resolved to light/dark on <html>).
+const BRAND = { name: 'F88tball', logo: '/logo.png', logoLight: '/logo-light.png' }
+
+const BRAND_CSS = `
+.brand-logo-dark { display: block; }
+.brand-logo-light { display: none; }
+:root[data-theme='light'] .brand-logo-dark { display: none; }
+:root[data-theme='light'] .brand-logo-light { display: block; }
+`
 
 const NAV = [
   { to: '/', key: 'nav.dashboard', icon: LayoutDashboard, end: true },
@@ -32,11 +41,14 @@ export default function Layout() {
           display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
         }}>
           {/* Brand */}
+          <style>{BRAND_CSS}</style>
           <NavLink to="/" end style={{
             display: 'flex', alignItems: 'center', marginRight: 8,
           }}>
-            <img src={BRAND.logo} alt={BRAND.name}
-              style={{ height: 34, width: 'auto', display: 'block' }} />
+            <img src={BRAND.logo} alt={BRAND.name} className="brand-logo-dark"
+              style={{ height: 34, width: 'auto' }} />
+            <img src={BRAND.logoLight} alt={BRAND.name} className="brand-logo-light"
+              style={{ height: 34, width: 'auto' }} />
           </NavLink>
 
           {/* Nav links */}
