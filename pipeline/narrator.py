@@ -271,9 +271,15 @@ def _hashtag(text: str) -> str:
     return f"#{parts}" if parts else ""
 
 
+# Generic reach hashtags appended to every video to widen its audience.
+_GENERIC_TAGS = ["#Viral", "#ForYou", "#Shorts", "#Futbol", "#Football",
+                 "#Soccer", "#Highlights", "#Resumen", "#Goles"]
+
+
 def build_tags(match: Match) -> list[str]:
-    """Deterministic hashtags: competition + teams + countries + scorers +
-    stadium + city — exactly the set the user asked for."""
+    """Deterministic hashtags: teams + countries + stadium + scorers, then the
+    generic reach tags (#Viral, #ForYou, ...). Exactly the set the user asked
+    for, in that order."""
     tags: list[str] = []
     # Competition (La Liga / World Cup ...).
     if match.competition:
@@ -285,17 +291,18 @@ def build_tags(match: Match) -> list[str]:
         tags.append("#WorldCup2026")
     if match.country:
         tags.append(_hashtag(match.country))
-    # Scorers.
-    for g in match.goals:
-        t = _hashtag(g.player)
-        if t and t not in tags:
-            tags.append(t)
     # Stadium + city.
     if match.venue:
         tags.append(_hashtag(match.venue))
     if match.city:
         tags.append(_hashtag(match.city))
-    tags.append("#Futbol")
+    # Scorers.
+    for g in match.goals:
+        t = _hashtag(g.player)
+        if t and t not in tags:
+            tags.append(t)
+    # Generic reach tags last.
+    tags += _GENERIC_TAGS
     # Dedupe preserving order, drop empties.
     seen, out = set(), []
     for t in tags:

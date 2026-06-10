@@ -50,6 +50,21 @@ def _credentials(cfg: BrandProfile):
     return creds
 
 
+def _description_with_hashtags(description: str, tags: list[str]) -> str:
+    """Append the hashtags to the description so they show on YouTube. Each tag
+    is normalised to a single leading '#'. YouTube only honours up to 15 hashtags
+    in a description, so cap at 15."""
+    hashtags = []
+    for t in tags:
+        h = "#" + t.lstrip("#")
+        if h != "#" and h not in hashtags:
+            hashtags.append(h)
+    if not hashtags:
+        return description
+    line = " ".join(hashtags[:15])
+    return f"{description}\n\n{line}".strip()
+
+
 def upload_youtube(cfg: BrandProfile, video_path: Path, metadata: dict) -> str:
     """Upload `video_path` and return the watch URL."""
     from googleapiclient.discovery import build
@@ -60,11 +75,17 @@ def upload_youtube(cfg: BrandProfile, video_path: Path, metadata: dict) -> str:
     creds = _credentials(cfg)
     youtube = build("youtube", "v3", credentials=creds)
 
+    tags = metadata.get("tags", [])
     body = {
         "snippet": {
             "title": metadata.get("title", "")[:100],
-            "description": metadata.get("description", ""),
-            "tags": metadata.get("tags", [])[:500],
+            # Hashtags only count as VISIBLE on YouTube when they're in the
+            # description (the `tags` field below is an invisible search-only
+            # metadata list). YouTube honours at most 15 hashtags in the
+            # description, so append the first 15.
+            "description": _description_with_hashtags(
+                metadata.get("description", ""), tags),
+            "tags": [t.lstrip("#") for t in tags][:500],
             "categoryId": "17",   # Sports
         },
         "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False},
