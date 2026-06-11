@@ -267,8 +267,8 @@ def get_content(profile_id: str):
     cfg = _profile_or_404(profile_id)
     records = []
     # Per-match videos and daily digests both live as JSON + .mp4 records.
-    files = sorted(cfg.CONTENT_DIR.glob("match_*.json"), reverse=True) + \
-        sorted(cfg.CONTENT_DIR.glob("digest_*.json"), reverse=True)
+    files = [*cfg.CONTENT_DIR.glob("match_*.json"),
+             *cfg.CONTENT_DIR.glob("digest_*.json")]
     for f in files:
         try:
             rec = json.loads(f.read_text(encoding="utf-8"))
@@ -282,7 +282,14 @@ def get_content(profile_id: str):
             # filename) busts the browser cache and never shows a stale frame.
             ver = int(vid.stat().st_mtime)
             rec["video_url"] = f"/api/profiles/{profile_id}/video/{f.stem}?v={ver}"
+        # Old records predate the generated_at field — fall back to the JSON's
+        # mtime (same local-time format) so they still sort by creation time.
+        if not rec.get("generated_at"):
+            rec["generated_at"] = time.strftime(
+                "%Y-%m-%dT%H:%M:%S", time.localtime(f.stat().st_mtime))
         records.append(rec)
+    # Newest first, matches and digests interleaved by when they were made.
+    records.sort(key=lambda r: r["generated_at"], reverse=True)
     return records
 
 
