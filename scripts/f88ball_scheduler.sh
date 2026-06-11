@@ -17,4 +17,8 @@ cd "$PROJECT_DIR"
 # uv lives in ~/.local/bin; ensure it is on PATH when launchd runs us.
 export PATH="$HOME/.local/bin:$PATH"
 
+# Unbuffered stdout so the log file shows activity live (stdout is a file
+# under launchd, which would otherwise block-buffer prints for hours).
+export PYTHONUNBUFFERED=1
+
 exec uv run python main.py --profile "$PROFILE" --scheduler --interval "$INTERVAL" --upload
