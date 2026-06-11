@@ -85,8 +85,10 @@ class GenerateRequest(BaseModel):
 
 
 class DigestRequest(BaseModel):
-    day: str | None = None        # YYYY-MM-DD, default = latest match day
-    format: str = "reel"          # reel | youtube
+    day: str | None = None        # YYYY-MM-DD, default = latest matchday
+    format: str = "youtube"       # youtube (horizontal) | reel (vertical)
+    fixture_ids: list[int] | None = None   # selected matches; None = whole matchday
+    brief: str = ""               # free-form angle for the intro/outro
 
 
 class ProfileUpdate(BaseModel):
@@ -544,6 +546,7 @@ def _run_digest(profile_id: str, req: DigestRequest, run_id: int):
         if not day:
             raise RuntimeError("No match day available")
         result = run_daily_digest(profile_id, day, req.format,
+                                  fixture_ids=req.fixture_ids, brief=req.brief,
                                   on_step=on_step, check_cancel=check_cancel)
         with _lock:
             if _is_current():

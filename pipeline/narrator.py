@@ -166,18 +166,23 @@ _LENGTH = {
 
 
 def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
-            provider: str | None = None, style: str = "full") -> str:
+            provider: str | None = None, style: str = "full",
+            digest_brief: str = "", digest_open: bool = False,
+            digest_close: bool = False) -> str:
     """Return an exciting narration script for `match`.
 
     style: full (single-match reel) | digest_short (~20s segment) |
     digest_long (detailed YouTube segment).
+
+    For a multi-match digest, `digest_open`/`digest_close` mark the first/last
+    segment so they carry the recap's opening and closing, and `digest_brief` is
+    a free-form angle ('the most exciting World Cup ties') woven into them.
     """
     lang = _LANG_NAME.get(language, "Spanish")
     length = _LENGTH.get(style, _LENGTH["full"])
 
     # A single-match reel (style "full") opens by presenting the match and closes
-    # by inviting viewers to follow + like. The fast daily digest (very short
-    # per-match segments) skips this so each segment stays punchy.
+    # by inviting viewers to follow + like.
     if style == "full":
         intro_outro = (
             "- START by presenting the match in your own words, naming BOTH teams, "
@@ -191,7 +196,21 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
             "vary it every time.\n"
         )
     else:
+        # In a digest, only the first segment opens the recap and the last closes
+        # it. The brief (if any) sets the angle of that opening/closing.
         intro_outro = ""
+        angle = (f" The angle of this recap is: \"{digest_brief.strip()}\". "
+                 "Frame the opening around that angle.") if digest_brief.strip() else ""
+        if digest_open:
+            intro_outro += (
+                "- This is the FIRST match of a daily recap. OPEN the recap in your "
+                "own words, welcoming viewers to the round's highlights before "
+                f"narrating this match.{angle}\n")
+        if digest_close:
+            intro_outro += (
+                "- This is the LAST match of the recap. After narrating it, CLOSE "
+                "the whole recap with a short wrap-up and a natural call to action "
+                "inviting viewers to FOLLOW and LIKE for more. Vary the wording.\n")
 
     system = (system_preamble + "\n\n" if system_preamble else "") + (
         f"You are a LEGENDARY, white-hot football play-by-play commentator. Write ONLY in {lang}. "

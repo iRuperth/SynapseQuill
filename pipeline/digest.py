@@ -97,36 +97,78 @@ def _stitch_with_crossfade(segments: list):
     return CompositeVideoClip(placed)
 
 
+def _matchday_window(source, day: str, on_step) -> list:
+    """All finished matches of the JORNADA around `day`. A league round is played
+    across consecutive days (Fri-Mon) and games that start late cross midnight,
+    so a single calendar day misses half the round. We gather a small window of
+    days around `day` and dedupe by fixture id."""
+    from datetime import date as _d
+    from datetime import timedelta
+    try:
+        y, mo, dd = (int(x) for x in day.split("-"))
+        center = _d(y, mo, dd)
+    except (ValueError, AttributeError):
+        return [m for m in source.fixtures_on(day) if m.is_finished]
+    seen, out = set(), []
+    # 3 days before .. 1 day after covers a weekend round even across midnight.
+    for delta in range(-3, 2):
+        d = (center + timedelta(days=delta)).isoformat()
+        on_step("fetch", f"Fetching matchday around {d}")
+        for m in source.fixtures_on(d):
+            if m.is_finished and m.fixture_id not in seen:
+                seen.add(m.fixture_id)
+                out.append(m)
+    out.sort(key=lambda m: (m.date or "", m.kickoff or ""))
+    return out
+
+
 def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
+                     fixture_ids: list | None = None, brief: str = "",
                      on_step: StepCb = lambda *_: None,
                      check_cancel: CancelCb = lambda: False) -> dict:
-    """Generate a digest of all finished matches on `day`. Returns a result dict."""
+    """Generate a digest video. By default it covers the whole matchday (jornada)
+    around `day`; pass `fixture_ids` to include only those matches. `brief` is a
+    free-form angle ('the most exciting World Cup ties') woven into the intro and
+    outro. Returns a result dict."""
     from .data_sources import get_data_source
 
     cfg = BrandProfile(profile_id)
     fmt = get_format(video_format)
     source = get_data_source(cfg)
 
-    on_step("fetch", f"Fetching {day} matches")
-    finished = [m for m in source.fixtures_on(day) if m.is_finished]
+    if fixture_ids:
+        # Manual selection: just the chosen matches (any day), in the given order.
+        on_step("fetch", f"Fetching {len(fixture_ids)} selected matches")
+        wanted = {int(f) for f in fixture_ids}
+        finished = [source.fixture(fid) for fid in fixture_ids]
+        finished = [m for m in finished if m and m.is_finished and m.fixture_id in wanted]
+    else:
+        # Automatic: the whole matchday around `day`.
+        finished = _matchday_window(source, day, on_step)
     if not finished:
-        return {"status": "empty", "message": f"No finished matches on {day}"}
+        return {"status": "empty", "message": f"No finished matches for {day}"}
 
-    # Cap how many matches fit for the reel (3 min / 25s ≈ 6).
+    # Cap how many matches fit for the reel (3 min / 25s ≈ 6). The horizontal
+    # youtube digest has no cap — it covers every match of the round.
     if fmt.key == "reel":
         finished = finished[:_REEL_MAX_MATCHES]
     style = "digest_short" if fmt.key == "reel" else "digest_long"
     seg_cap = _REEL_MAX_SEG if fmt.key == "reel" else _YT_MAX_SEG
 
     segments, used, all_tags = [], [], []
+    last_i = len(finished) - 1
     for i, m in enumerate(finished):
         if check_cancel():
             return {"status": "cancelled"}
         full = source.fixture(m.fixture_id)          # enrich goals/cards
         on_step("segment", f"{i + 1}/{len(finished)}: {full.scoreline}")
+        # The brief (e.g. "the most exciting World Cup ties") frames the digest:
+        # it opens the FIRST segment and closes the LAST one.
         narration = narrate(full, language=cfg.LANGUAGE,
                             system_preamble=cfg.system_preamble,
-                            provider=cfg.LLM_PROVIDER, style=style)
+                            provider=cfg.LLM_PROVIDER, style=style,
+                            digest_brief=brief, digest_open=(i == 0),
+                            digest_close=(i == last_i))
         # Make each segment sound human (e.g. "la penalty" -> "el penalty").
         from .text_polish import polish
         narration = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
