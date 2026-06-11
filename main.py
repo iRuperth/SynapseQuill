@@ -84,7 +84,16 @@ def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
     """Poll the data source and generate a video as each match finishes. When a
     whole matchday wraps up, build (and upload) its digest recap too."""
     source = get_data_source(cfg)
+    # Seed from the content records on disk so a restart (reboot, crash,
+    # launchd relaunch) never regenerates and re-uploads a match it already
+    # produced. Fixture ids may be int or str depending on the source, so
+    # seed both forms.
     processed: set = set()
+    for f in cfg.CONTENT_DIR.glob("match_*.json"):
+        fid = f.stem.removeprefix("match_")
+        processed.add(fid)
+        if fid.isdigit():
+            processed.add(int(fid))
     print(f"[scheduler] watching {source.name} fixtures every {interval}s "
           f"(profile '{cfg.id}'). Ctrl+C to stop.")
     while True:
