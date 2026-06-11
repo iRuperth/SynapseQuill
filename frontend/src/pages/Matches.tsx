@@ -80,8 +80,9 @@ export default function Matches() {
     setStatus({ state: 'running', step: 'start', message: t('matches.preparingDigest') })
     await generateDigest(active, {
       day: day || undefined,
-      // The recap is horizontal by default; honour an explicit reel choice.
-      format: format === 'reel' ? 'reel' : 'youtube',
+      // The matchday recap is ALWAYS horizontal (youtube), independent of the
+      // per-match `format` control which only applies to single-match videos.
+      format: 'youtube',
       fixture_ids: selected.size ? [...selected] : undefined,  // empty = whole matchday
       brief: brief.trim() || undefined,
     })

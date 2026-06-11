@@ -269,7 +269,10 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         "expressions (e.g. never 'de cojones', 'puto', 'hostia'). The passion comes from "
         "energy, imagery and rhythm — not from coarse language.\n"
         "STRICT: use ONLY the provided facts — never invent scorers, minutes, scores or plays. "
-        f"{length} Output ONLY the spoken script: no headings, markdown, hashtags or stage directions."
+        f"{length} Output ONLY the spoken script: no headings, markdown, hashtags or stage directions.\n"
+        f"ABSOLUTE LANGUAGE RULE (overrides everything above): write the ENTIRE script in "
+        f"{lang} ONLY. The instructions and the match data above are in English, but your "
+        f"output must be 100% {lang} — never switch to English or any other language."
     )
 
     user = (
