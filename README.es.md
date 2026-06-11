@@ -168,6 +168,20 @@ pnpm run dev                  # http://localhost:5173
 Las imagenes (FLUX) y la voz (Edge-TTS) no necesitan clave. Abre
 `http://localhost:5173` y el panel habla con el backend en el puerto 5001.
 
+### Atajos con make (macOS / Linux)
+
+El Makefile envuelve los pasos de arriba:
+
+```bash
+make install   # uv sync + pnpm install
+make dev       # backend (:5001) y frontend (:5173) a la vez — Ctrl+C para los dos
+make backend   # solo el backend
+make frontend  # solo el frontend
+make build     # build de produccion del frontend
+make docker    # todo el stack en Docker (frontend :8080, backend :5001)
+make clean     # borra los artefactos generados
+```
+
 ## CLI
 
 ```bash

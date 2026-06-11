@@ -168,6 +168,20 @@ pnpm run dev                  # http://localhost:5173
 Images (FLUX) and voice (Edge-TTS) need **no API key**. Open
 `http://localhost:5173` and the dashboard talks to the backend on port 5001.
 
+### Make shortcuts (macOS / Linux)
+
+The Makefile wraps the steps above:
+
+```bash
+make install   # uv sync + pnpm install
+make dev       # backend (:5001) + frontend (:5173) together — Ctrl+C stops both
+make backend   # backend only
+make frontend  # frontend only
+make build     # production build of the frontend
+make docker    # full stack in Docker (frontend :8080, backend :5001)
+make clean     # remove generated artifacts
+```
+
 ## CLI
 
 ```bash
