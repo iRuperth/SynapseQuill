@@ -63,12 +63,44 @@ def _segment_clip(cfg, match: Match, narration: str, fmt, seg_cap: float, on_ste
     return CompositeVideoClip(layers, size=(fmt.width, fmt.height)).with_audio(audio), total
 
 
+# Crossfade overlap between match segments (seconds). Each segment starts this
+# long before the previous one ends, so during the overlap we see the outgoing
+# crowd dissolve INTO the incoming one — image over image, never a black flash.
+_XFADE = 0.6
+
+
+def _stitch_with_crossfade(segments: list):
+    """Concatenate match segments with a smooth crossfade between them. Segments
+    overlap by `_XFADE`; each (except the first) fades its video and audio in
+    over the overlap, so the transition is a soft dissolve with no black gap."""
+    from moviepy import CompositeVideoClip
+    from moviepy.audio.fx import AudioFadeIn, AudioFadeOut
+    from moviepy.video.fx import CrossFadeIn
+
+    if len(segments) <= 1:
+        return CompositeVideoClip(segments) if segments else segments[0]
+
+    placed, t = [], 0.0
+    for i, seg in enumerate(segments):
+        if i == 0:
+            placed.append(seg.with_start(0))
+            t = seg.duration
+            continue
+        start = t - _XFADE
+        clip = seg.with_start(start).with_effects([CrossFadeIn(_XFADE)])
+        # Soft-fade the audio too so the narration/music don't cut abruptly.
+        if clip.audio is not None:
+            clip = clip.with_audio(
+                clip.audio.with_effects([AudioFadeIn(_XFADE), AudioFadeOut(_XFADE)]))
+        placed.append(clip)
+        t = start + seg.duration
+    return CompositeVideoClip(placed)
+
+
 def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
                      on_step: StepCb = lambda *_: None,
                      check_cancel: CancelCb = lambda: False) -> dict:
     """Generate a digest of all finished matches on `day`. Returns a result dict."""
-    from moviepy import concatenate_videoclips
-
     from .data_sources import get_data_source
 
     cfg = BrandProfile(profile_id)
@@ -104,10 +136,7 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         all_tags += build_tags(full)
 
     on_step("video", "Stitching the digest")
-    # Direct cut between segments (no crossfade): each segment carries its own
-    # crowd backdrop, so a crossfade would briefly show black. A hard cut keeps
-    # every frame's image whole.
-    digest = concatenate_videoclips(segments, method="compose")
+    digest = _stitch_with_crossfade(segments)
 
     out = cfg.VIDEO_DIR / f"digest_{day}_{fmt.key}.mp4"
     digest.write_videofile(str(out), fps=24, codec="libx264", audio_codec="aac",
