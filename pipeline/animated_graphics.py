@@ -498,8 +498,11 @@ def _unified_frame(match: Match, _language: str, p: float, *,
 
     bar_y_px = names_y_px + _sy(0.05)
     bar_w = int(W * 0.55)
+    # The bar tells the result at a glance: GOLD when a team won the match,
+    # white on a draw — same convention as the winner's gold score and name.
+    bar_color = _GOLD if hg != ag else _WHITE
     d.rectangle([(W - bar_w) // 2, bar_y_px, (W + bar_w) // 2, bar_y_px + max(4, _sy(0.004))],
-                fill=_ACCENT2)
+                fill=bar_color)
 
     # Chronological events: goals + cards together, revealed one by one.
     events = []
