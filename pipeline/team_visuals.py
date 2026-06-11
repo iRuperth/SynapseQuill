@@ -41,7 +41,39 @@ TEAM_PALETTE = {
     "Switzerland": "red jerseys, Swiss flags (red with white cross)",
     "Poland": "white and red jerseys, Polish flags (white and red)",
     "Czechia": "red jerseys, Czech flags (white red blue)",
+    "Czech Republic": "red jerseys, Czech flags (white red blue)",
     "South Africa": "yellow and green jerseys, South African flags",
+    # ── World Cup 2026: remaining qualified nations ──
+    "Iran": "white jerseys, Iranian flags (green white red)",
+    "Australia": "gold-yellow jerseys with green, Australian flags (blue with white stars)",
+    "Saudi Arabia": "green and white jerseys, Saudi flags (green with white emblem)",
+    "Qatar": "maroon jerseys, Qatari flags (maroon and white)",
+    "Uzbekistan": "white and sky-blue jerseys, Uzbek flags (blue white green stripes)",
+    "Jordan": "white jerseys, Jordanian flags (black white green with red triangle)",
+    "Iraq": "green jerseys, Iraqi flags (red white black)",
+    "Ecuador": "yellow jerseys, Ecuadorian flags (yellow blue red)",
+    "Paraguay": "red and white striped jerseys, Paraguayan flags (red white blue)",
+    "New Zealand": "all-white jerseys, New Zealand flags (blue with red stars)",
+    "Egypt": "red jerseys, Egyptian flags (red white black)",
+    "Algeria": "white and green jerseys, Algerian flags (green and white with red crescent)",
+    "Tunisia": "red jerseys, Tunisian flags (red with white circle)",
+    "Ivory Coast": "orange jerseys, Ivorian flags (orange white green)",
+    "Côte d'Ivoire": "orange jerseys, Ivorian flags (orange white green)",
+    "Ghana": "white jerseys, Ghanaian flags (red gold green with black star)",
+    "Cape Verde": "blue jerseys, Cape Verdean flags (blue with white and red stripes)",
+    "DR Congo": "blue and red jerseys, DR Congo flags (sky-blue with red diagonal stripe)",
+    "Congo DR": "blue and red jerseys, DR Congo flags (sky-blue with red diagonal stripe)",
+    "Austria": "red and white jerseys, Austrian flags (red white red)",
+    "Scotland": "navy-blue jerseys, Scottish flags (blue with white diagonal cross)",
+    "Norway": "red jerseys with navy, Norwegian flags (red with blue and white cross)",
+    "Bosnia and Herzegovina": "blue jerseys, Bosnian flags (blue with yellow triangle and white stars)",
+    "Sweden": "yellow jerseys with blue, Swedish flags (blue with yellow cross)",
+    "Türkiye": "red jerseys, Turkish flags (red with white crescent and star)",
+    "Turkey": "red jerseys, Turkish flags (red with white crescent and star)",
+    "Panama": "red jerseys, Panamanian flags (red white blue with stars)",
+    "Curaçao": "blue jerseys, Curaçao flags (blue with yellow stripe and white stars)",
+    "Curacao": "blue jerseys, Curaçao flags (blue with yellow stripe and white stars)",
+    "Haiti": "blue and red jerseys, Haitian flags (blue and red)",
     # ── La Liga clubs ──
     "Real Madrid": "all-white jerseys, white and purple banners",
     "Barcelona": "blue and garnet (blaugrana) striped jerseys, Catalan banners",
@@ -74,9 +106,59 @@ TEAM_PALETTE = {
 }
 
 
+# Nationality of the PEOPLE in the crowd. FLUX only renders e.g. Japanese faces
+# reliably if the prompt says "Japanese fans" — flags alone ("Japanese flags")
+# are a weak cue. Club supporters stay generic: their identity comes from the
+# colours, and naming a club in the prompt invites its crest onto the fabric.
+_DEMONYM = {
+    "Brazil": "Brazilian", "Argentina": "Argentine", "France": "French",
+    "Spain": "Spanish", "Germany": "German", "England": "English",
+    "Portugal": "Portuguese", "Italy": "Italian", "Netherlands": "Dutch",
+    "Mexico": "Mexican", "United States": "American", "USA": "American",
+    "Croatia": "Croatian", "Belgium": "Belgian", "Uruguay": "Uruguayan",
+    "Morocco": "Moroccan", "Japan": "Japanese", "South Korea": "South Korean",
+    "Korea Republic": "South Korean", "Canada": "Canadian",
+    "Colombia": "Colombian", "Senegal": "Senegalese", "Switzerland": "Swiss",
+    "Poland": "Polish", "Czechia": "Czech", "Czech Republic": "Czech",
+    "South Africa": "South African",
+    "New Zealand": "New Zealand", "Bosnia and Herzegovina": "Bosnian",
+    "DR Congo": "Congolese", "Congo DR": "Congolese",
+    "Côte d'Ivoire": "Ivorian",
+    "Iran": "Iranian", "Saudi Arabia": "Saudi", "Qatar": "Qatari",
+    "Australia": "Australian", "Ecuador": "Ecuadorian", "Ghana": "Ghanaian",
+    "Cameroon": "Cameroonian", "Nigeria": "Nigerian", "Ivory Coast": "Ivorian",
+    "Tunisia": "Tunisian", "Algeria": "Algerian", "Egypt": "Egyptian",
+    "Costa Rica": "Costa Rican", "Panama": "Panamanian",
+    "Honduras": "Honduran", "Paraguay": "Paraguayan", "Chile": "Chilean",
+    "Peru": "Peruvian", "Venezuela": "Venezuelan", "Bolivia": "Bolivian",
+    "Scotland": "Scottish", "Wales": "Welsh", "Denmark": "Danish",
+    "Sweden": "Swedish", "Norway": "Norwegian", "Austria": "Austrian",
+    "Serbia": "Serbian", "Turkey": "Turkish", "Türkiye": "Turkish",
+    "Ukraine": "Ukrainian", "Greece": "Greek", "Iceland": "Icelandic",
+    "Slovakia": "Slovak", "Slovenia": "Slovenian", "Romania": "Romanian",
+    "Hungary": "Hungarian", "Finland": "Finnish", "Albania": "Albanian",
+    "Ireland": "Irish", "Republic of Ireland": "Irish", "Haiti": "Haitian",
+    "Cape Verde": "Cape Verdean", "Curaçao": "Curaçaoan",
+    "Curacao": "Curaçaoan", "Uzbekistan": "Uzbek", "Jordan": "Jordanian",
+    "Iraq": "Iraqi", "United Arab Emirates": "Emirati",
+}
+
+
 def palette(team: str) -> str:
     """Return the colour/flag descriptor for a team, with a graceful default."""
-    return TEAM_PALETTE.get(team, f"{team} supporters in their team colours")
+    return TEAM_PALETTE.get(team, f"flags and banners in {team}'s team colours")
+
+
+def fan_descriptor(team: str) -> str:
+    """Adjective for the supporters THEMSELVES ('Japanese', 'Iranian'), so the
+    generated faces match the nation. Clubs in the palette return '' (colours
+    carry their identity; naming the club invites its crest). Unknown teams use
+    the team name attributively ('Iran fans'), which still steers the crowd."""
+    if team in _DEMONYM:
+        return _DEMONYM[team]
+    if team in TEAM_PALETTE:
+        return ""
+    return team
 
 
 def team_seed(team: str) -> int:
@@ -84,17 +166,19 @@ def team_seed(team: str) -> int:
     return zlib.crc32(team.encode("utf-8")) % 1_000_000
 
 
-# Appended to every prompt. FLUX renders garbled text/letters, so forbid them as
-# hard as possible AND remove every surface that invites text: NO advertising
-# boards, NO printed banners, NO stadium structure. Flags/scarves must be SOLID
-# single-colour blocks (a printed banner is what FLUX fills with fake letters).
-_NO_TEXT = ("the flags and scarves are SOLID plain single-colour fabric with NO "
-            "pattern; absolutely NO text, NO letters, NO words, NO numbers, NO "
-            "writing of any kind, NO printed banners, NO painted banners, NO "
-            "logos, NO crests, NO brand names, NO sponsors, NO advertising "
-            "boards, NO advertisement hoardings, NO signage, NO scoreboard, NO "
-            "billboards; if any fabric would show writing, make it a blank solid "
-            "colour instead")
+# Appended to every prompt. FLUX renders garbled text and, worse, REAL famous
+# club crests on any printed fabric (a Real Madrid badge showed up on an
+# Espanyol flag). schnell follows negation poorly — naming a concept, even to
+# forbid it, plants it — so the fabric is described POSITIVELY as blank, and
+# the ban list avoids the exact nouns that summon football badges ("crest",
+# "logo", "sponsor"); generic "symbols/emblems" cover them without naming them.
+_NO_TEXT = ("every flag and every scarf is COMPLETELY BLANK plain fabric in one "
+            "single solid colour, with absolutely nothing printed, painted, "
+            "drawn or embroidered on it; no text, no letters, no words, no "
+            "numbers, no symbols, no emblems, no drawings on any fabric, "
+            "clothing or surface; no advertising boards, no advertisement "
+            "hoardings, no signage, no scoreboard, no billboards; any fabric "
+            "that would show a design is a blank solid colour instead")
 
 # Frame the shot as a CLOSE-UP of the supporters in the stands, not a wide
 # stadium view — we want faces, raised arms, scarves and flags filling the frame,
@@ -112,11 +196,13 @@ def crowd_prompt(team: str, visual_style: str, vertical: bool = True) -> str:
     renders cleanly) and forbids every text-bearing surface.
     """
     comp = "vertical 9:16 composition" if vertical else "wide 16:9 composition"
+    dem = fan_descriptor(team)
+    fans = f"ecstatic {dem} fans" if dem else "ecstatic fans"
     return (
-        f"{visual_style}, photorealistic {_CLOSEUP}, ecstatic fans at night "
-        f"waving MANY large {palette(team)}, raised scarves and big solid-colour "
-        f"flags filling the frame, flares and confetti, vibrant colours, "
-        f"{comp}, {_NO_TEXT}"
+        f"{visual_style}, photorealistic {_CLOSEUP}, {fans} at night "
+        f"waving MANY large {palette(team)}, raised scarves and big plain "
+        f"solid-colour flags filling the frame, flares and confetti, vibrant "
+        f"colours, {comp}, {_NO_TEXT}"
     )
 
 
