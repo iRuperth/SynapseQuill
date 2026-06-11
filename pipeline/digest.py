@@ -209,7 +209,12 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
     if cfg.AUTO_UPLOAD if upload is None else upload:
         on_step("upload", f"Uploading digest to YouTube ({cfg.YOUTUBE_PRIVACY})")
         title = f"Resumen del día · {day}"
-        meta = {"title": title, "description": " ".join(tags), "tags": tags}
+        # Real text as the description — the uploader appends the hashtags
+        # itself, so putting the tags here would print them twice (spam wall).
+        scorelines = "\n".join(u["scoreline"] for u in used)
+        meta = {"title": title,
+                "description": f"Todos los resultados de la jornada:\n{scorelines}",
+                "tags": tags}
         try:
             from .publishers import upload_youtube
             record["youtube_url"] = upload_youtube(cfg, out, meta)

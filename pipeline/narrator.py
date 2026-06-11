@@ -307,9 +307,63 @@ def _hashtag(text: str) -> str:
 
 
 # Generic reach hashtags appended to every video to widen its audience. The
-# brand (#F88tball) leads them.
-_GENERIC_TAGS = ["#F88tball", "#Viral", "#ForYou", "#Shorts", "#Futbol",
-                 "#Football", "#Soccer", "#Highlights", "#Goles"]
+# brand (#F88tball) leads them. Deliberately NO #Viral/#ForYou/#Shorts: bait
+# tags carry no algorithmic weight (YouTube detects Shorts by format) and only
+# dilute the topical signal. #Soccer stays for the US audience (World Cup 2026
+# is hosted there).
+_GENERIC_TAGS = ["#F88tball", "#Futbol", "#Football", "#Soccer",
+                 "#Highlights", "#Goles"]
+
+
+# Fan-community hashtags: tags whose communities actively browse them — worth
+# more than any generic reach tag. Hand-curated (never AI-generated, so nothing
+# invented): each is the side's established nickname/chant as actually used by
+# its fanbase. Covers ALL 48 teams of the 2026 World Cup, plus La Liga clubs.
+_FAN_TAGS = {
+    # ── World Cup 2026: hosts (CONCACAF) ──
+    "United States": "#USMNT", "USA": "#USMNT",
+    "Mexico": "#VamosMexico", "Canada": "#CANMNT",
+    # ── CONCACAF qualified ──
+    "Panama": "#MareaRoja", "Haiti": "#LesGrenadiers",
+    "Curaçao": "#Korsou", "Curacao": "#Korsou",
+    # ── CONMEBOL ──
+    "Argentina": "#VamosArgentina", "Brazil": "#VaiBrasil",
+    "Uruguay": "#LaCeleste", "Colombia": "#VamosColombia",
+    "Ecuador": "#LaTri", "Paraguay": "#LaAlbirroja",
+    # ── UEFA ──
+    "Spain": "#VamosEspaña", "France": "#AllezLesBleus",
+    "England": "#ThreeLions", "Germany": "#DieMannschaft",
+    "Portugal": "#ForçaPortugal", "Netherlands": "#OnsOranje",
+    "Belgium": "#DiablesRouges", "Croatia": "#Vatreni",
+    "Switzerland": "#LaNati", "Austria": "#DasTeam",
+    "Scotland": "#TartanArmy", "Norway": "#Landslaget",
+    "Bosnia and Herzegovina": "#Zmajevi", "Sweden": "#Blågult",
+    "Türkiye": "#BizimCocuklar", "Turkey": "#BizimCocuklar",
+    "Czechia": "#CeskaRepre", "Czech Republic": "#CeskaRepre",
+    # ── AFC ──
+    "Japan": "#SamuraiBlue", "Iran": "#TeamMelli",
+    "South Korea": "#TaegukWarriors", "Korea Republic": "#TaegukWarriors",
+    "Australia": "#Socceroos", "Saudi Arabia": "#GreenFalcons",
+    "Qatar": "#AlAnnabi", "Uzbekistan": "#WhiteWolves",
+    "Jordan": "#Nashama", "Iraq": "#LionsOfMesopotamia",
+    # ── CAF ──
+    "Morocco": "#DimaMaghrib", "Senegal": "#TerangaLions",
+    "Egypt": "#Pharaohs", "Algeria": "#LesFennecs",
+    "Tunisia": "#EaglesOfCarthage", "South Africa": "#BafanaBafana",
+    "Ivory Coast": "#LesElephants", "Côte d'Ivoire": "#LesElephants",
+    "Ghana": "#BlackStars", "Cape Verde": "#TubaroesAzuis",
+    "DR Congo": "#LesLeopards", "Congo DR": "#LesLeopards",
+    # ── OFC ──
+    "New Zealand": "#AllWhites",
+    # ── Other big nations (not at WC2026 but may appear in other content) ──
+    "Italy": "#ForzaAzzurri",
+    # ── La Liga clubs ──
+    "Real Madrid": "#HalaMadrid", "Barcelona": "#ForçaBarça",
+    "Atlético Madrid": "#AupaAtleti", "Atletico Madrid": "#AupaAtleti",
+    "Athletic Club": "#AupaAthletic", "Real Betis": "#MushoBetis",
+    "Valencia": "#AmuntValencia", "Real Sociedad": "#AurreraReala",
+    "Osasuna": "#AupaOsasuna",
+}
 
 
 def _competition_tags(competition: str) -> list[str]:
@@ -317,7 +371,7 @@ def _competition_tags(competition: str) -> list[str]:
     several tags fans search for."""
     low = (competition or "").lower()
     if "world cup" in low or "mundial" in low:
-        return ["#WorldCup2026", "#FIFAWorldCup", "#Mundial2026", "#2026"]
+        return ["#WorldCup2026", "#FIFAWorldCup", "#Mundial2026"]
     if "laliga" in low or "la liga" in low:
         return ["#LaLiga"]
     if "premier" in low:
@@ -353,18 +407,21 @@ def _top_scorer_tags(match: Match, limit: int = 3) -> list[str]:
 
 
 def build_tags(match: Match) -> list[str]:
-    """Deterministic hashtags in priority order (only the first 15 show on
-    YouTube): competition, teams, country, summary, stadium, top-3 scorers, then
-    the brand + generic reach tags."""
+    """Deterministic hashtags in priority order (only the first few show on
+    YouTube): competition, the matchup, teams + their fan-community tags,
+    country, summary, stadium, top-3 scorers, then the brand + generic tags."""
     is_world_cup = "world cup" in (match.competition or "").lower() \
         or "mundial" in (match.competition or "").lower()
 
     tags: list[str] = []
     # 1) Competition, proper-cased (#WorldCup2026 #FIFAWorldCup ... or #LaLiga).
     tags += _competition_tags(match.competition)
-    # 2) Teams. At the World Cup the teams ARE the countries, so don't also add
-    #    the host country as a separate tag.
+    # 2) The matchup itself (#RealMadridBarcelona) — what fans search the night
+    #    of the game — then each team and their fan-community tags. At the World
+    #    Cup the teams ARE the countries, so don't also add the host country.
+    tags.append(_hashtag(f"{match.home} {match.away}"))
     tags += [_hashtag(match.home), _hashtag(match.away)]
+    tags += [t for t in (_FAN_TAGS.get(match.home), _FAN_TAGS.get(match.away)) if t]
     if not is_world_cup and match.country:
         tags.append(_hashtag(match.country))
     # 3) Summary, then stadium.

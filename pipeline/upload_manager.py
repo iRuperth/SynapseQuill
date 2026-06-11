@@ -46,10 +46,13 @@ def upload_content(cfg: BrandProfile, content_id: str) -> dict:
 
     rec_path = _record_path(cfg, content_id)
     record = json.loads(rec_path.read_text(encoding="utf-8")) if rec_path.exists() else {}
+    # The uploader appends the hashtags to the description itself, so the
+    # fallback description here must be real text, never the tags again.
+    scorelines = "\n".join(m.get("scoreline", "") for m in record.get("matches", []))
     meta = record.get("metadata") or {
         "title": record.get("scoreline") or (f"Resumen del día · {record.get('day')}"
                                              if record.get("day") else "Resumen"),
-        "description": " ".join(record.get("tags", [])),
+        "description": (record.get("scoreline") or scorelines or "Resumen"),
         "tags": record.get("tags", []),
     }
 
