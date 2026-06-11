@@ -207,13 +207,20 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         if digest_open:
             intro_outro += (
                 "- This is the FIRST match of a daily recap. OPEN the recap in your "
-                "own words, welcoming viewers to the round's highlights before "
-                f"narrating this match.{angle}\n")
+                "own words, welcoming viewers to the round's highlights and NAMING "
+                "the competition (given in the facts) the way local fans say it "
+                "(e.g. 'el resumen de la jornada de La Liga', 'el resumen de la "
+                "jornada del Mundial') before narrating this match. Do NOT invent "
+                "a round number — anchor the matchday on the date if needed."
+                f"{angle}\n")
         if digest_close:
             intro_outro += (
                 "- This is the LAST match of the recap. After narrating it, CLOSE "
                 "the whole recap with a short wrap-up and a natural call to action "
-                "inviting viewers to FOLLOW and LIKE for more. Vary the wording.\n")
+                "inviting viewers to FOLLOW and LIKE so they never miss the epic "
+                "moments of THIS competition — name it the way local fans say it "
+                "('los momentos épicos de La Liga', '... del Mundial'), never just "
+                "a generic 'del fútbol'. Vary the wording.\n")
 
     system = (system_preamble + "\n\n" if system_preamble else "") + (
         f"You are a LEGENDARY, white-hot football play-by-play commentator. Write ONLY in {lang}. "
