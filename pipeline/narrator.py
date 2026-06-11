@@ -274,7 +274,7 @@ def _hashtag(text: str) -> str:
 # Generic reach hashtags appended to every video to widen its audience. The
 # brand (#F88tball) leads them.
 _GENERIC_TAGS = ["#F88tball", "#Viral", "#ForYou", "#Shorts", "#Futbol",
-                 "#Football", "#Soccer", "#Highlights", "#Resumen", "#Goles"]
+                 "#Football", "#Soccer", "#Highlights", "#Goles"]
 
 
 def _competition_tags(competition: str) -> list[str]:
@@ -299,29 +299,46 @@ def _competition_tags(competition: str) -> list[str]:
     return [_hashtag(competition)] if competition else []
 
 
+def _top_scorer_tags(match: Match, limit: int = 3) -> list[str]:
+    """Hashtags for the TOP scorers (most goals first), capped at `limit`.
+    Players are ranked by how many goals they scored in the match; ties keep the
+    order in which they first scored."""
+    counts: dict[str, int] = {}
+    order: list[str] = []
+    for g in match.goals:
+        p = g.player
+        if not p:
+            continue
+        if p not in counts:
+            counts[p] = 0
+            order.append(p)
+        counts[p] += 1
+    ranked = sorted(order, key=lambda p: counts[p], reverse=True)  # stable
+    return [_hashtag(p) for p in ranked[:limit]]
+
+
 def build_tags(match: Match) -> list[str]:
-    """Deterministic hashtags: competition + teams + countries + stadium +
-    scorers, then the generic reach tags (#F88tball, #Viral, ...). Exactly the
-    set the user asked for, in that order."""
+    """Deterministic hashtags in priority order (only the first 15 show on
+    YouTube): competition, teams, country, summary, stadium, top-3 scorers, then
+    the brand + generic reach tags."""
+    is_world_cup = "world cup" in (match.competition or "").lower() \
+        or "mundial" in (match.competition or "").lower()
+
     tags: list[str] = []
-    # Competition (La Liga / World Cup ...), with proper casing.
+    # 1) Competition, proper-cased (#WorldCup2026 #FIFAWorldCup ... or #LaLiga).
     tags += _competition_tags(match.competition)
-    # Teams.
+    # 2) Teams. At the World Cup the teams ARE the countries, so don't also add
+    #    the host country as a separate tag.
     tags += [_hashtag(match.home), _hashtag(match.away)]
-    # Country.
-    if match.country:
+    if not is_world_cup and match.country:
         tags.append(_hashtag(match.country))
-    # Stadium + city.
+    # 3) Summary, then stadium.
+    tags.append("#Resumen")
     if match.venue:
         tags.append(_hashtag(match.venue))
-    if match.city:
-        tags.append(_hashtag(match.city))
-    # Scorers.
-    for g in match.goals:
-        t = _hashtag(g.player)
-        if t and t not in tags:
-            tags.append(t)
-    # Generic reach tags last.
+    # 4) Top-3 scorers (most goals first).
+    tags += _top_scorer_tags(match, limit=3)
+    # 5) Brand + generic reach tags last.
     tags += _GENERIC_TAGS
     # Dedupe preserving order, drop empties.
     seen, out = set(), []
