@@ -25,23 +25,23 @@ case "${1:-status}" in
     cp "$SRC_PLIST" "$DEST_PLIST"
     launchctl unload "$DEST_PLIST" 2>/dev/null || true
     launchctl load "$DEST_PLIST"
-    echo "✅ Instalado y arrancado. Corre en segundo plano (aunque cierres el IDE)."
+    echo "✅ Installed and started. Runs in the background (even if you close the IDE)."
     echo "   Logs: $LOG"
     ;;
   start)
     launchctl load "$DEST_PLIST" 2>/dev/null || launchctl start "$LABEL"
-    echo "▶️  Arrancado."
+    echo "▶️  Started."
     ;;
   stop)
     launchctl unload "$DEST_PLIST" 2>/dev/null || true
-    echo "⏹  Detenido (no arrancará hasta que vuelvas a 'start'/'install')."
+    echo "⏹  Stopped (won't start again until you run 'start'/'install')."
     ;;
   status)
     if launchctl list | grep -q "$LABEL"; then
-      echo "🟢 En ejecución:"
+      echo "🟢 Running:"
       launchctl list | grep "$LABEL"
     else
-      echo "🔴 No está corriendo."
+      echo "🔴 Not running."
     fi
     ;;
   logs)
@@ -50,10 +50,10 @@ case "${1:-status}" in
   uninstall)
     launchctl unload "$DEST_PLIST" 2>/dev/null || true
     rm -f "$DEST_PLIST"
-    echo "🗑  Desinstalado."
+    echo "🗑  Uninstalled."
     ;;
   *)
-    echo "Uso: bash scripts/f88ball_scheduler_ctl.sh {install|start|stop|status|logs|uninstall}"
+    echo "Usage: bash scripts/f88ball_scheduler_ctl.sh {install|start|stop|status|logs|uninstall}"
     exit 1
     ;;
 esac
