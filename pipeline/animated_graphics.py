@@ -95,7 +95,9 @@ def set_logo(path) -> None:
         return
     try:
         logo = Image.open(path).convert("RGBA")
-        target_w = int(W * 0.42)
+        # The tall reel can afford a wide logo; the short 16:9 frame needs a
+        # smaller one (its width is large but its height is tight up top).
+        target_w = int(W * (0.42 if _VERTICAL else 0.22))
         ratio = target_w / logo.width
         _LOGO = logo.resize((target_w, max(1, int(logo.height * ratio))))
     except Exception:
@@ -439,14 +441,15 @@ def _unified_frame(match: Match, _language: str, p: float):
     ag = match.away_goals or 0
 
     # The F88tball logo sits at the top (drawn by _paste_logo). Start content
-    # below it so nothing overlaps.
-    top_pad = _sy(0.16)
+    # below it so nothing overlaps. The 16:9 frame is short, so the logo band is
+    # a bigger fraction of its height — leave more room below it there.
+    top_pad = _sy(0.16 if _VERTICAL else 0.22)
 
     # Crest · SCORE · "-" · SCORE · Crest, all on ONE horizontal line (like a TV
     # broadcast scorebug). The winner's number is gold, the loser white; a draw
     # leaves both white.
     home_crest, away_crest = _crest(match.home_logo), _crest(match.away_logo)
-    score_px = _sy(0.10 if _VERTICAL else 0.052)
+    score_px = _sy(0.10 if _VERTICAL else 0.075)
     big = _font(score_px)
     row_cy = top_pad + score_px // 2          # vertical center of the score row
 
