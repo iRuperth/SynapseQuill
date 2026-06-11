@@ -21,6 +21,9 @@ export default function Matches() {
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<GenerationStatus>({ state: 'idle' })
   const [format, setFormat] = useState<string>('reel')
+  // Digest selection (empty = whole matchday) + free-form angle for intro/outro.
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [brief, setBrief] = useState<string>('')
   // Fixture ids that already have a generated video (→ "Created" instead of "Generate").
   const [createdIds, setCreatedIds] = useState<Set<number>>(new Set())
   const poll = useRef<number | null>(null)
@@ -75,8 +78,22 @@ export default function Matches() {
   async function onDigest() {
     if (!active) return
     setStatus({ state: 'running', step: 'start', message: t('matches.preparingDigest') })
-    await generateDigest(active, { day: day || undefined, format })
+    await generateDigest(active, {
+      day: day || undefined,
+      // The recap is horizontal by default; honour an explicit reel choice.
+      format: format === 'reel' ? 'reel' : 'youtube',
+      fixture_ids: selected.size ? [...selected] : undefined,  // empty = whole matchday
+      brief: brief.trim() || undefined,
+    })
     startPolling()
+  }
+
+  function toggleSelect(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
   }
 
   const busy = status.state === 'running'
@@ -105,14 +122,28 @@ export default function Matches() {
         <button onClick={load} style={btnStyle}>{t('matches.refresh')}</button>
         <button onClick={onDigest} disabled={busy}
           style={{ ...btnStyle, background: 'var(--accent)', color: '#04201c', opacity: busy ? 0.5 : 1 }}>
-          🎬 {t('matches.dayDigest')}
+          🎬 {selected.size
+            ? t('matches.digestSelected', { count: selected.size })
+            : t('matches.dayDigest')}
         </button>
+        {selected.size > 0 && (
+          <button onClick={() => setSelected(new Set())} style={{ ...btnStyle, background: 'var(--bg-elevated)' }}>
+            {t('matches.clearSelection')}
+          </button>
+        )}
       </div>
 
+      {/* Recap angle (free-form): woven into the digest's intro + outro. */}
+      <label style={{ display: 'grid', gap: 4, margin: '0 0 8px', maxWidth: 640 }}>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('matches.digestBriefLabel')}</span>
+        <input value={brief} onChange={(e) => setBrief(e.target.value)}
+          placeholder={t('matches.digestBriefPlaceholder')} style={inputStyle} />
+      </label>
+
       <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: -4 }}>
-        {day ? t('matches.showingMatchesOn', { day }) : t('matches.showingLatest')}
-        {' · '}{t('matches.digestHintBefore')} <strong>{t('matches.dayDigest')}</strong>{' '}
-        {day ? t('matches.digestHintAfterDay', { day }) : t('matches.digestHintAfterLatest')}
+        {selected.size
+          ? t('matches.digestHintSelected', { count: selected.size })
+          : t('matches.digestHintWhole')}
       </p>
 
       {error && <div style={errorBox}>{error}</div>}
@@ -156,7 +187,8 @@ export default function Matches() {
       <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
         {matches.map((m) => (
           <MatchRow key={m.fixture_id} profileId={active} match={m}
-            busy={busy} created={createdIds.has(m.fixture_id)} onGenerate={onGenerate} />
+            busy={busy} created={createdIds.has(m.fixture_id)} onGenerate={onGenerate}
+            checked={selected.has(m.fixture_id)} onToggle={() => toggleSelect(m.fixture_id)} />
         ))}
         {!loading && !matches.length && !error && (
           <p style={{ color: 'var(--text-muted)' }}>{t('matches.noMatches')}</p>
@@ -166,9 +198,10 @@ export default function Matches() {
   )
 }
 
-function MatchRow({ profileId, match: m, busy, created, onGenerate }: {
+function MatchRow({ profileId, match: m, busy, created, onGenerate, checked, onToggle }: {
   profileId: string; match: Match; busy: boolean; created: boolean
   onGenerate: (m: Match) => void
+  checked: boolean; onToggle: () => void
 }) {
   const t = useT()
   const [open, setOpen] = useState(false)
@@ -192,6 +225,12 @@ function MatchRow({ profileId, match: m, busy, created, onGenerate }: {
     <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
       {/* Clickable header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', gap: 12, flexWrap: 'wrap' }}>
+        {/* Select for the recap (finished matches only). */}
+        {m.finished && (
+          <input type="checkbox" checked={checked} onChange={onToggle}
+            title={t('matches.selectForDigest')}
+            style={{ width: 18, height: 18, cursor: 'pointer', accentColor: 'var(--accent)' }} />
+        )}
         <button onClick={toggle} style={{
           display: 'flex', alignItems: 'center', gap: 10, background: 'none',
           border: 'none', color: 'var(--text)', cursor: 'pointer', textAlign: 'left', flex: 1, minWidth: 280,

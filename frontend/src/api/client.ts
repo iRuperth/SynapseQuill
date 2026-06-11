@@ -51,10 +51,15 @@ export const generate = (id: string, fixtureId: number,
     format: opts?.format ?? 'reel',
   }).then((r) => r.data)
 
-export const generateDigest = (id: string, opts?: { day?: string; format?: string }) =>
+export const generateDigest = (
+  id: string,
+  opts?: { day?: string; format?: string; fixture_ids?: number[]; brief?: string },
+) =>
   http.post(`/profiles/${id}/digest`, {
     day: opts?.day ?? null,
-    format: opts?.format ?? 'reel',
+    format: opts?.format ?? 'youtube',
+    fixture_ids: opts?.fixture_ids ?? null,
+    brief: opts?.brief ?? '',
   }).then((r) => r.data)
 
 export const getWorldCupCalendar = () =>
