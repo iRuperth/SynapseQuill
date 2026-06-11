@@ -104,21 +104,22 @@ def set_logo(path) -> None:
         _LOGO = None
 
 
-def _paste_logo(img: Image.Image, p: float = 0.0) -> None:
+def _paste_logo(img: Image.Image, p: float = 0.0, *, logo=None, total=None) -> None:
     """Composite the F88tball logo at the BOTTOM CENTER with a gentle pulse: it
     softly breathes (scale) and glows brighter and back over a ~2.4s cycle, so it
     feels alive without being distracting. `p` is the clip progress (0..1).
-    No-op when no logo is set."""
-    if _LOGO is None:
+    `logo`/`total` are captured per clip (the digest needs this); they fall back
+    to the module globals. No-op when no logo is set."""
+    the_logo = logo if logo is not None else _LOGO
+    if the_logo is None:
         return
     import math
 
     # One full pulse every ~2.4s; phase derived from absolute time = p * total.
-    # We approximate time from p using the module-level _TOTAL when available.
-    t = p * (_TOTAL or 1.0)
+    t = p * ((total if total is not None else _TOTAL) or 1.0)
     wave = 0.5 + 0.5 * math.sin(2 * math.pi * (t / 2.4))   # 0..1, smooth
 
-    logo = _LOGO
+    logo = the_logo
     # Brightness 0.92 -> 1.18 (a soft glow up and down).
     glow = 0.92 + 0.26 * wave
     logo = ImageEnhance.Brightness(logo).enhance(glow)
@@ -426,14 +427,19 @@ def timeline_clip(match: Match, language: str, duration: float):
 
 
 # ── Unified frame: scoreboard (top) + event timeline (bottom), one screen ──
-def _unified_frame(match: Match, _language: str, p: float):
+def _unified_frame(match: Match, _language: str, p: float, *,
+                   backdrop=None, total=None, logo=None):
     """Everything on ONE screen for the whole video: compact scoreboard at the
-    top, then goals + cards revealed in chronological order below. The crowd
-    backdrop is baked in, so it never disappears (single continuous clip).
+    top, then goals + cards revealed in chronological order below.
 
-    `_language` is kept for signature parity with the other clip builders even
-    though the timeline title (the only localized string) was removed."""
-    img = _canvas().convert("RGBA")
+    `backdrop`, `total` and `logo` are captured PER CLIP and passed in, so a
+    multi-segment digest gives each match its OWN crowd image (lazy frames must
+    not read the shared module globals, which would all resolve to the last
+    segment's state). They fall back to the globals for the single-match path.
+    `_language` is kept for signature parity (the only localized string was
+    removed)."""
+    bd = backdrop if backdrop is not None else _BACKDROP
+    img = (bd.copy() if bd is not None else Image.new("RGB", (W, H), _BG)).convert("RGBA")
     d = ImageDraw.Draw(img)
 
     home_color, away_color = _side_colors(match)
@@ -564,7 +570,7 @@ def _unified_frame(match: Match, _language: str, p: float):
         _center(d, _fmt_date(match.date), foot_y + _sy(0.04), _font(_fs(0.028)), _WHITE)
 
     # F88tball brand logo, pulsing, at the top.
-    _paste_logo(img, p)
+    _paste_logo(img, p, logo=logo, total=total)
     return img
 
 
@@ -572,8 +578,15 @@ def unified_clip(match: Match, language: str, duration: float):
     import numpy as np
     from moviepy import VideoClip
 
+    # Capture the per-clip state NOW (backdrop/logo/total). The frame function is
+    # lazy and runs at render time, by which point the module globals hold the
+    # LAST segment's state — so a digest would reuse one image for every match.
+    backdrop, logo, total = _BACKDROP, _LOGO, duration
+
     def make(t):
-        return np.array(_unified_frame(match, language, min(t / duration, 1.0)).convert("RGB"))
+        return np.array(_unified_frame(
+            match, language, min(t / duration, 1.0),
+            backdrop=backdrop, logo=logo, total=total).convert("RGB"))
 
     return VideoClip(make, duration=duration)
 
