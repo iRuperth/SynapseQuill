@@ -494,7 +494,6 @@ def _unified_frame(match: Match, _language: str, p: float):
     bar_w = int(W * 0.55)
     d.rectangle([(W - bar_w) // 2, bar_y_px, (W + bar_w) // 2, bar_y_px + max(4, _sy(0.004))],
                 fill=_ACCENT2)
-    tl_top_y = 0.46 if _VERTICAL else 0.70
 
     # Chronological events: goals + cards together, revealed one by one.
     events = []
@@ -515,12 +514,11 @@ def _unified_frame(match: Match, _language: str, p: float):
         events = sorted((goals + cards)[:_MAX_EVENTS], key=lambda e: e[0])
 
     if events:
-        # No timeline title (removed) — the rows start right below the accent
-        # bar. Keep a floor fraction so a tall score can still push them down.
+        # The rows start right below the accent bar — no big empty gap.
         reveal_each = 1.0 / len(events)
         row_font = _font(_fs(0.026))
         box_w, box_h = _fs(0.024), _fs(0.032)
-        top_y = max(bar_y_px + _sy(0.06), _sy(tl_top_y))
+        top_y = bar_y_px + _sy(0.04)
 
         # Column layout. The 16:9 frame is wide but SHORT (only ~30% of its
         # height is left for rows), so it goes two-column much sooner and the

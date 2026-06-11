@@ -95,8 +95,11 @@ def describe_match(match: Match) -> str | None:
             "and took the result with authority.")
     else:  # diff == 1
         parts.append(
-            "A tight, closely-fought match decided by the finest margin. "
-            "Convey how hard-fought and competitive it was.")
+            "A tight, hard-fought, intense match that the winner EARNED in a "
+            "close duel. Convey how competitive and demanding it was and give "
+            "the winner full credit for taking it. NEVER belittle the win — do "
+            "NOT call it 'por la mínima', 'por poco' or any phrase that downplays "
+            "the winner's merit; frame it as a hard-earned, deserved victory.")
 
     # A comeback only counts when the game was WON on goals (the winner was
     # behind and overturned it). A level game decided on penalties is not a
@@ -259,6 +262,9 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         "football words: 'penalti'/'penalty'/'penal' are MASCULINE — say 'el "
         "penalti', 'un penalti', 'convierte el penalti', NEVER 'la penalty'. "
         "Use 'del'/'al', never 'de el'/'a el'.\n"
+        "- ALWAYS say the minute with the word 'minuto': 'al minuto 51', 'en el "
+        "minuto 51', 'hacia el minuto 30'. NEVER drop the noun — never 'a la 51', "
+        "'a los 51', 'en la 51' or a bare number, which sound wrong.\n"
         "- When you name the stadium, refer to it naturally as 'el estadio <name>' or keep its "
         "article — say 'en el estadio de la Cerámica' or 'en La Cerámica', NEVER a bare "
         "'en la Cerámica' that reads as an adjective. Mentioning the stadium is optional; only "
