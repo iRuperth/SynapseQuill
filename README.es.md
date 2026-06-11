@@ -228,12 +228,3 @@ no necesita clave. Para subir a YouTube: por perfil
 `PRACTICE_MODE=true` (por defecto) fuerza cada subida a YouTube a **privada**.
 Cambia `YOUTUBE_PRIVACY=private|unlisted|public` para ajustar la visibilidad
 cuando estes listo.
-
-## Cobertura del briefing
-
-| Nivel | Requisito | Donde |
-|-------|-----------|-------|
-| Esencial | Texto multiplataforma desde prompts; interfaz web; git | `content_generator.py`, `frontend/` |
-| Medio | Docker; dos o mas LLMs; preambulo de empresa / persona; imagenes en el contenido | `docker-compose.yml`, `core/llm/`, `brand_config.system_preamble`, `media_provider.py` |
-| Avanzado | Trazabilidad; ES / EN / FR / IT; noticias financieras en vivo; RAG de arXiv | `tracing.py`, `narrator.py`, `tools/finance.py`, `tools/arxiv_rag.py` |
-| Experto | Graph RAG; sistema multiagente; guardrails | `tools/graph_rag.py`, `agents/graph.py`, `agents/guardrail.py` |

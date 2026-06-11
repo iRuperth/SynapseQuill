@@ -226,12 +226,3 @@ no key. For YouTube upload: per-profile `profiles/<id>/tokens/client_secret.json
 
 `PRACTICE_MODE=true` (default) forces every YouTube upload to **private**. Set
 `YOUTUBE_PRIVACY=private|unlisted|public` to change visibility once you are ready.
-
-## Briefing coverage
-
-| Level | Requirement | Where |
-|-------|-------------|-------|
-| Essential | Multi-platform text from prompts; web UI; git | `content_generator.py`, `frontend/` |
-| Medium | Docker; two or more LLMs; company / persona preamble; images in content | `docker-compose.yml`, `core/llm/`, `brand_config.system_preamble`, `media_provider.py` |
-| Advanced | Tracing; ES / EN / FR / IT; live finance news; arXiv RAG | `tracing.py`, `narrator.py`, `tools/finance.py`, `tools/arxiv_rag.py` |
-| Expert | Graph RAG; multi-agent system; guardrails | `tools/graph_rag.py`, `agents/graph.py`, `agents/guardrail.py` |
