@@ -51,8 +51,38 @@ def cmd_report(cfg: BrandProfile):
         print(f"   - {rec.get('scoreline')}  ({rec.get('generated_at')})")
 
 
+# The matchday recap is always the long horizontal video.
+_DIGEST_FORMAT = "youtube"
+
+
+def _maybe_run_digest(cfg: BrandProfile, source, upload: bool):
+    """Build the matchday (jornada) digest once the round is OVER: a day that
+    had games, all of them finished, and nothing scheduled for the following
+    day (a league round ends on its last day; mid-round days keep waiting, and
+    their games are picked up by the round window when the digest runs). The
+    digest's own record file marks a day as done, so it never re-generates."""
+    from datetime import date, timedelta
+
+    from pipeline.digest import run_daily_digest
+
+    for offset in (1, 0):                      # yesterday first (post-midnight ends)
+        d = date.today() - timedelta(days=offset)
+        day = d.isoformat()
+        if (cfg.CONTENT_DIR / f"digest_{day}_{_DIGEST_FORMAT}.json").exists():
+            continue                            # already built
+        fixtures = source.fixtures_on(day)
+        if not fixtures or not all(m.is_finished for m in fixtures):
+            continue                            # no games / still playing
+        if source.fixtures_on((d + timedelta(days=1)).isoformat()):
+            continue                            # round continues tomorrow — wait
+        print(f"[scheduler] matchday {day} complete — building the digest...")
+        run_daily_digest(cfg.id, day, _DIGEST_FORMAT, upload=upload or None,
+                         on_step=lambda step, msg: print(f"[digest:{step}] {msg}"))
+
+
 def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
-    """Poll the data source and generate a video as each match finishes."""
+    """Poll the data source and generate a video as each match finishes. When a
+    whole matchday wraps up, build (and upload) its digest recap too."""
     source = get_data_source(cfg)
     processed: set = set()
     print(f"[scheduler] watching {source.name} fixtures every {interval}s "
@@ -62,6 +92,7 @@ def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
             for match in source.poll_finished(processed):
                 print(f"[scheduler] finished: {match.scoreline} — generating...")
                 run_match(cfg.id, match, do_video=True, do_upload=upload)
+            _maybe_run_digest(cfg, source, upload)
         except Exception as e:  # noqa: BLE001
             print(f"[scheduler] error: {e}")
         time.sleep(interval)
@@ -72,7 +103,8 @@ def main():
     p.add_argument("--profile", help="profile id under profiles/")
     p.add_argument("--match", type=int, help="generate a video for this fixture id")
     p.add_argument("--fixtures", action="store_true", help="list today's fixtures")
-    p.add_argument("--scheduler", action="store_true", help="auto-generate as matches finish")
+    p.add_argument("--scheduler", action="store_true",
+                   help="auto-generate as matches finish + the digest when the matchday ends")
     p.add_argument("--interval", type=int, default=90, help="scheduler poll interval (s)")
     p.add_argument("--report", action="store_true", help="report generated content")
     p.add_argument("--upload", action="store_true", help="upload to YouTube")

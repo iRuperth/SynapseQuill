@@ -124,12 +124,14 @@ def _matchday_window(source, day: str, on_step) -> list:
 
 def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
                      fixture_ids: list | None = None, brief: str = "",
+                     upload: bool | None = None,
                      on_step: StepCb = lambda *_: None,
                      check_cancel: CancelCb = lambda: False) -> dict:
     """Generate a digest video. By default it covers the whole matchday (jornada)
     around `day`; pass `fixture_ids` to include only those matches. `brief` is a
     free-form angle ('the most exciting World Cup ties') woven into the intro and
-    outro. Returns a result dict."""
+    outro. `upload` forces the YouTube upload on/off; None defers to the
+    profile's AUTO_UPLOAD. Returns a result dict."""
     from .data_sources import get_data_source
 
     cfg = BrandProfile(profile_id)
@@ -201,8 +203,10 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
-    # Auto-upload the finished digest if the profile has it enabled.
-    if cfg.AUTO_UPLOAD:
+    # Upload the finished digest when forced by the caller (the scheduler) or
+    # when the profile has auto-upload enabled. Privacy comes from the profile
+    # (YOUTUBE_PRIVACY, default private; PRACTICE_MODE forces private).
+    if cfg.AUTO_UPLOAD if upload is None else upload:
         on_step("upload", f"Uploading digest to YouTube ({cfg.YOUTUBE_PRIVACY})")
         title = f"Resumen del día · {day}"
         meta = {"title": title, "description": " ".join(tags), "tags": tags}
