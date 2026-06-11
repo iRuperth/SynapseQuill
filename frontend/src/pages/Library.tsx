@@ -19,16 +19,27 @@ export default function Library() {
   }
   useEffect(reload, [active])
 
-  // Poll the generation status so the library shows "generating" too.
+  // Poll the generation status ONLY while a generation is running. We check
+  // once on entry and then re-schedule the next check only as long as the state
+  // stays 'running', so the library doesn't hammer /status every 1.5s while idle.
   useEffect(() => {
     if (!active) return
-    if (poll.current) window.clearInterval(poll.current)
-    poll.current = window.setInterval(async () => {
+    let alive = true
+    const tick = async () => {
+      if (!alive) return
       const s = await getStatus(active).catch(() => ({ state: 'idle' }) as GenerationStatus)
+      if (!alive) return
       setStatus(s)
       if (s.state === 'done') reload()
-    }, 1500)
-    return () => { if (poll.current) window.clearInterval(poll.current) }
+      if (s.state === 'running') {
+        poll.current = window.setTimeout(tick, 1500)   // keep polling while busy
+      }
+    }
+    tick()
+    return () => {
+      alive = false
+      if (poll.current) window.clearTimeout(poll.current)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active])
 
