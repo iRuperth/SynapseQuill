@@ -109,6 +109,20 @@ export const generateFreeform = (
 ) =>
   http.post<FreeformResult>(`/profiles/${id}/content/freeform`, body).then((r) => r.data)
 
+// ── Topic / educational video (clean backdrop + logo + narration) ───
+export const generateTopicVideo = (
+  id: string,
+  body: { topic: string; source_text?: string; audience?: string; format?: string; do_upload?: boolean },
+) =>
+  http.post(`/profiles/${id}/topic-video`, {
+    topic: body.topic,
+    source_text: body.source_text ?? '',
+    audience: body.audience ?? '',
+    format: body.format ?? 'reel',
+    do_video: true,
+    do_upload: body.do_upload ?? false,
+  }).then((r) => r.data)
+
 // ── Advanced / expert features ──────────────────────────────────────
 export const getScienceTopics = () =>
   http.get<{ topics: string[] }>('/science/topics').then((r) => r.data.topics)
