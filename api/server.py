@@ -105,6 +105,20 @@ class FreeformRequest(BaseModel):
     provider: str | None = None            # optional LLM override
 
 
+class TopicVideoRequest(BaseModel):
+    """Topic/educational video: clean crowd backdrop + logo + narration.
+
+    source_text lets the user paste their own content/facts so the narration is
+    grounded in it (otherwise the model explains the topic without inventing).
+    """
+    topic: str
+    source_text: str = ""                  # user-provided content to narrate
+    audience: str = ""
+    format: str = "reel"                   # reel (9:16) | youtube (16:9)
+    do_video: bool = True
+    do_upload: bool = False
+
+
 class CreateProfile(BaseModel):
     id: str
     name: str | None = None
@@ -266,9 +280,10 @@ def freeform_content(profile_id: str, body: FreeformRequest):
 def get_content(profile_id: str):
     cfg = _profile_or_404(profile_id)
     records = []
-    # Per-match videos and daily digests both live as JSON + .mp4 records.
+    # Per-match videos, daily digests and topic videos all live as JSON + .mp4.
     files = [*cfg.CONTENT_DIR.glob("match_*.json"),
-             *cfg.CONTENT_DIR.glob("digest_*.json")]
+             *cfg.CONTENT_DIR.glob("digest_*.json"),
+             *cfg.CONTENT_DIR.glob("topic_*.json")]
     for f in files:
         try:
             rec = json.loads(f.read_text(encoding="utf-8"))
@@ -298,7 +313,7 @@ def delete_content(profile_id: str, name: str):
     """Delete a generated item (its JSON, .mp4 and image folder)."""
     cfg = _profile_or_404(profile_id)
     # Guard against path traversal: only allow our own stems.
-    if not name.startswith(("match_", "digest_")) or "/" in name or ".." in name:
+    if not name.startswith(("match_", "digest_", "topic_")) or "/" in name or ".." in name:
         raise HTTPException(status_code=400, detail="Invalid id")
     removed = []
     for path in (cfg.CONTENT_DIR / f"{name}.json", cfg.VIDEO_DIR / f"{name}.mp4"):
@@ -318,8 +333,9 @@ def delete_content(profile_id: str, name: str):
 def get_video(profile_id: str, name: str):
     """Stream a generated .mp4 (match or digest) so the frontend can play it."""
     cfg = _profile_or_404(profile_id)
-    # Accept both a bare fixture id (legacy) and a full stem (match_<id>/digest_<...>).
-    stem = name if name.startswith(("match_", "digest_")) else f"match_{name}"
+    # Accept both a bare fixture id (legacy) and a full stem
+    # (match_<id> / digest_<...> / topic_<...>).
+    stem = name if name.startswith(("match_", "digest_", "topic_")) else f"match_{name}"
     vid = cfg.VIDEO_DIR / f"{stem}.mp4"
     if not vid.exists():
         raise HTTPException(status_code=404, detail="Video not found")
@@ -591,6 +607,68 @@ def generate_digest(profile_id: str, req: DigestRequest):
                 _running.pop(profile_id, None)
         raise HTTPException(status_code=503, detail=f"Could not start digest: {e}") from e
     return {"ok": True, "message": "Digest started"}
+
+
+def _run_topic_video(profile_id: str, req: TopicVideoRequest, run_id: int):
+    def _is_current() -> bool:
+        return _running.get(profile_id, {}).get("run_id") == run_id
+
+    def on_step(step: str, msg: str):
+        with _lock:
+            if _is_current():
+                _running[profile_id].update(
+                    step=step, message=msg,
+                    progress=_STEP_PROGRESS.get(step, _running[profile_id].get("progress", 0)))
+
+    def check_cancel() -> bool:
+        return _cancel_flags.get(profile_id) == run_id
+
+    try:
+        from pipeline.runner import run_topic_video
+        result = run_topic_video(
+            profile_id, req.topic, source_text=req.source_text,
+            audience=req.audience, on_step=on_step, check_cancel=check_cancel,
+            do_video=req.do_video, do_upload=req.do_upload, video_format=req.format)
+        with _lock:
+            if _is_current():
+                _running[profile_id].update(state="done", result=result)
+    except Exception as e:  # noqa: BLE001
+        with _lock:
+            if _is_current():
+                _running[profile_id].update(state="error", message=str(e))
+    finally:
+        time.sleep(30)
+        with _lock:
+            if _is_current():
+                _running.pop(profile_id, None)
+                _cancel_flags.pop(profile_id, None)
+
+
+@app.post("/api/profiles/{profile_id}/topic-video", status_code=202)
+def generate_topic_video(profile_id: str, req: TopicVideoRequest):
+    """Generate a topic/educational video (clean backdrop + logo + narration)."""
+    global _run_counter
+    _profile_or_404(profile_id)
+    if not req.topic.strip():
+        raise HTTPException(status_code=400, detail="A 'topic' is required")
+    with _lock:
+        if profile_id in _running and _running[profile_id].get("state") == "running":
+            raise HTTPException(status_code=409, detail="A generation is already running")
+        _run_counter += 1
+        run_id = _run_counter
+        _running[profile_id] = {"state": "running", "step": "start", "progress": 0,
+                                "message": "Preparando video...", "run_id": run_id}
+        _cancel_flags.pop(profile_id, None)
+    try:
+        threading.Thread(target=_run_topic_video, args=(profile_id, req, run_id),
+                         daemon=True).start()
+    except Exception as e:  # noqa: BLE001
+        with _lock:
+            if _running.get(profile_id, {}).get("run_id") == run_id:
+                _running.pop(profile_id, None)
+        raise HTTPException(status_code=503,
+                            detail=f"Could not start topic video: {e}") from e
+    return {"ok": True, "message": "Topic video started"}
 
 
 @app.get("/api/worldcup/calendar")
