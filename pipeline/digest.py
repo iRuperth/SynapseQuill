@@ -158,6 +158,7 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
     seg_cap = _REEL_MAX_SEG if fmt.key == "reel" else _YT_MAX_SEG
 
     segments, used, all_tags = [], [], []
+    failed_segments = []                          # scorelines that never passed
     last_i = len(finished) - 1
     for i, m in enumerate(finished):
         if check_cancel():
@@ -171,9 +172,39 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
                             provider=cfg.LLM_PROVIDER, style=style,
                             digest_brief=brief, digest_open=(i == 0),
                             digest_close=(i == last_i))
-        # Make each segment sound human (e.g. "la penalty" -> "el penalty").
+        # Same guardrail as single-match videos — a digest segment is published
+        # prose too. Retry with the failed checks fed back (3 attempts max).
+        from agents.guardrail import verify
+        verdict = verify(full, narration, cfg.LANGUAGE,
+                         judge_provider=cfg.JUDGE_PROVIDER)
+        for attempt in range(2):
+            if verdict["passed"]:
+                break
+            reasons = "; ".join(verdict["facts"]["issues"]) or \
+                verdict.get("judge", {}).get("reason", "")
+            on_step("guardrail", f"Segment rejected ({reasons}) — "
+                                 f"retrying ({attempt + 2}/3)")
+            narration = narrate(full, language=cfg.LANGUAGE,
+                                system_preamble=cfg.system_preamble +
+                                f"\nBe strictly factual. A previous draft was "
+                                f"rejected for: {reasons}. Copy every name, "
+                                "card colour and goal type EXACTLY.",
+                                provider=cfg.LLM_PROVIDER, style=style,
+                                digest_brief=brief, digest_open=(i == 0),
+                                digest_close=(i == last_i))
+            verdict = verify(full, narration, cfg.LANGUAGE,
+                             judge_provider=cfg.JUDGE_PROVIDER)
+        if not verdict["passed"]:
+            failed_segments.append(full.scoreline)
+            on_step("guardrail", f"WARNING: '{full.scoreline}' still failing "
+                                 "after 3 attempts — baked in; review before publishing")
+        # Make each segment sound human (e.g. "la penalty" -> "el penalty"),
+        # then re-check the facts: a polish that broke one is discarded.
         from .text_polish import polish
-        narration = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
+        polished = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
+        if polished != narration and verify(full, polished, cfg.LANGUAGE,
+                                            use_judge=False)["passed"]:
+            narration = polished
         clip, dur = _segment_clip(cfg, full, narration, fmt, seg_cap, on_step)
         segments.append(clip)
         used.append({"scoreline": full.scoreline, "duration": round(dur, 1)})
