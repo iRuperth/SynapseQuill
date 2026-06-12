@@ -43,9 +43,12 @@ def _subtitle_clips(subtitles: list[dict], total: float, fmt: VideoFormat):
 
     font = _font_path()
     w, h = fmt.width, fmt.height
-    # Sit the captions in a LOW safe band so they never overlap the scoreboard /
-    # event list above. The reel (tall) drops them lower than the wide format.
-    base_y = int(h * (0.80 if fmt.vertical else 0.80))
+    # Vertical (Shorts/Reels): the phone UI covers the top ~9% (status bar),
+    # the right ~13% from ~48-82% height (like/share rail) and the bottom ~27%
+    # (channel + title overlay) — so captions sit at 62%, above that bottom
+    # band, and in a narrower box that clears the rail. Horizontal keeps the
+    # classic low band: desktop YouTube draws no permanent overlay there.
+    base_y = int(h * (0.62 if fmt.vertical else 0.80))
     font_size = int(min(w, h) * 0.072)                   # big, MrBeast-like
     box_h = int(font_size * 2.2)                          # vertical padding
     clips = []
@@ -58,7 +61,8 @@ def _subtitle_clips(subtitles: list[dict], total: float, fmt: VideoFormat):
         txt = TextClip(
             text=cue["text"].upper(), font=font, font_size=font_size,
             color="#FFE600", stroke_color="black", stroke_width=int(font_size * 0.13),
-            method="caption", size=(int(w * 0.92), box_h), text_align="center",
+            method="caption", size=(int(w * (0.74 if fmt.vertical else 0.92)), box_h),
+            text_align="center",
         ).with_start(start).with_duration(dur)
 
         # Soft pop-in: scale 86%→100% over the first ~18% (no bounce), plus a

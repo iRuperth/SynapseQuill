@@ -129,7 +129,9 @@ def _paste_logo(img: Image.Image, p: float = 0.0, *, logo=None, total=None) -> N
         nw, nh = max(1, int(_LOGO.width * scale)), max(1, int(_LOGO.height * scale))
         logo = logo.resize((nw, nh))
 
-    margin = int(H * 0.035)
+    # On phones the top of a vertical video is covered by the status bar and
+    # the Shorts UI, so the top position needs a deeper margin than the bottom.
+    margin = int(H * (0.065 if _LOGO_AT_TOP else 0.035))
     cx = W // 2
     x = cx - logo.width // 2
     if _LOGO_AT_TOP:
@@ -538,10 +540,10 @@ def _unified_frame(match: Match, _language: str, p: float, *,
         per_col = (n + 1) // 2 if two_cols else n
         col_x = [_sx(0.08), _sx(0.54)]
 
-        # Size rows to the space available between the score block and the
-        # bottom league/date strip (which starts at ~0.90), so events never
-        # overlap it.
-        avail = _sy(0.88) - top_y
+        # Size rows to the space available below the score block. Vertical
+        # stops at 0.58: the burned-in captions sit at 0.62 and the phone UI
+        # owns the bottom ~27%. Horizontal keeps the bottom strip at ~0.90.
+        avail = _sy(0.58 if _VERTICAL else 0.88) - top_y
         row_h = min(_sy(0.07), max(_sy(0.04), avail // max(per_col, 1)))
 
         for i, (_, minute, kind, player, team) in enumerate(events):
@@ -565,12 +567,11 @@ def _unified_frame(match: Match, _language: str, p: float, *,
             d.text((tx + tag_w + _sx(0.012), y), f"{minute}'  {player}",
                    font=row_font, fill=shade)
 
-    # League / competition + date at the very bottom (white). Date DD/MM/YYYY.
-    header = _clean_competition(match.competition).upper() or "FÚTBOL"
-    foot_y = _sy(0.925)
-    _center(d, header, foot_y, _font(_fs(0.030)), _WHITE)
+    # Date only, at the bottom — exactly where it sat before (the competition
+    # name "FIFA WORLD CUP" above it is dropped; the crests and the YouTube
+    # title already say it). Same y as the old layout: 0.925 + 0.04 = 0.965.
     if match.date:
-        _center(d, _fmt_date(match.date), foot_y + _sy(0.04), _font(_fs(0.028)), _WHITE)
+        _center(d, _fmt_date(match.date), _sy(0.965), _font(_fs(0.028)), _WHITE)
 
     # F88tball brand logo, pulsing, at the top.
     _paste_logo(img, p, logo=logo, total=total)
