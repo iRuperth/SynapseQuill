@@ -113,8 +113,27 @@ def run_match(profile_id: str, match: Match, *,
         return {**result, "status": "cancelled"}
 
     # --- 2. YouTube metadata -----------------------------------------
+    # The title/description is LLM text too — verify it against the facts just
+    # like the narration (a right-footed goal once shipped as 'disparo de
+    # zurda' in the description). Deterministic layer only: cheap, no judge.
     on_step("metadata", "Generating YouTube metadata")
+    from agents.guardrail import facts_check
     meta = youtube_metadata(match, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
+    # Verify-then-regenerate: check at the TOP of the loop so EVERY draft —
+    # including the last — is verified (the old loop shipped the 3rd draft
+    # unchecked). ordered_score=False: the title carries the final first and
+    # the description may recount a running score last, so the play-by-play
+    # 'last token is the final' rule does not apply here.
+    for attempt in range(3):
+        meta_check = facts_check(match, f"{meta['title']}\n{meta['description']}",
+                                 cfg.LANGUAGE, ordered_score=False)
+        if meta_check["ok"] or attempt == 2:
+            break
+        reasons = "; ".join(meta_check["issues"])
+        on_step("metadata", f"Description failed fact checks ({reasons}) — "
+                            f"regenerating ({attempt + 2}/3)")
+        meta = youtube_metadata(match, language=cfg.LANGUAGE,
+                                provider=cfg.LLM_PROVIDER, feedback=reasons)
     result["metadata"] = meta
 
     # --- 3. Media + voice + video (Phase 2) --------------------------

@@ -447,13 +447,20 @@ def build_tags(match: Match) -> list[str]:
     return out
 
 
-def youtube_metadata(match: Match, *, language: str = "es", provider: str | None = None) -> dict:
-    """Generate a YouTube title + description (LLM) and deterministic tags."""
+def youtube_metadata(match: Match, *, language: str = "es", provider: str | None = None,
+                     feedback: str = "") -> dict:
+    """Generate a YouTube title + description (LLM) and deterministic tags.
+
+    `feedback`: rejection reasons from a previous draft (the runner verifies
+    the description against the match facts and retries with them)."""
     lang = _LANG_NAME.get(language, "Spanish")
     system = (
         f"You generate a YouTube title and description in {lang}. Respond as JSON with "
         '"title" (<=90 chars, include the scoreline) and "description" (2-4 sentences). '
-        "Use only the given facts. JSON only."
+        "Use only the given facts: exact player names, card colours, goal types "
+        "(penalty / own goal) and body parts (header vs left/right foot). JSON only."
+        + (f"\nA previous draft was rejected for: {feedback}. Fix exactly that."
+           if feedback else "")
     )
     user = f"Match:\n{_facts_block(match)}"
     raw = call_llm(
