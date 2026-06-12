@@ -64,19 +64,33 @@ def run_match(profile_id: str, match: Match, *,
         return {**result, "status": "cancelled"}
 
     # --- 1b. Guardrail: verify narration against the real match data --
+    # Regenerate until it passes (up to 3 attempts total), feeding the failed
+    # checks back into the prompt: a rejected narration must never reach the
+    # voice/video — a wrong card colour and a misspelled scorer both shipped
+    # before this loop existed.
     on_step("guardrail", "Verifying narration is grounded in match facts")
     from agents.guardrail import verify
-    verdict = verify(match, narration, cfg.LANGUAGE, judge_provider=cfg.LLM_PROVIDER)
+    verdict = verify(match, narration, cfg.LANGUAGE, judge_provider=cfg.JUDGE_PROVIDER)
     result["guardrail"] = verdict
-    if not verdict["passed"]:
-        # Retry once with a stricter instruction before giving up.
-        on_step("guardrail", "Narration failed checks — regenerating once")
+    for attempt in range(2):
+        if verdict["passed"]:
+            break
+        reasons = "; ".join(verdict["facts"]["issues"]) or \
+            verdict.get("judge", {}).get("reason", "")
+        on_step("guardrail", f"Narration failed checks ({reasons}) — regenerating "
+                             f"({attempt + 2}/3)")
         narration = narrate(match, language=cfg.LANGUAGE,
-                            system_preamble=cfg.system_preamble + "\nBe strictly factual.",
+                            system_preamble=cfg.system_preamble +
+                            "\nBe strictly factual. A previous draft was rejected "
+                            f"for: {reasons}. Copy every player name and card "
+                            "colour EXACTLY as given in the facts.",
                             provider=cfg.LLM_PROVIDER)
+        verdict = verify(match, narration, cfg.LANGUAGE, judge_provider=cfg.JUDGE_PROVIDER)
         result["narration"] = narration
-        result["guardrail"] = verify(match, narration, cfg.LANGUAGE,
-                                     judge_provider=cfg.LLM_PROVIDER)
+        result["guardrail"] = verdict
+    if not verdict["passed"]:
+        on_step("guardrail", "WARNING: narration still failing after 3 attempts — "
+                             "shipping the last draft; review before publishing")
 
     # --- 1c. Polish: make the script sound human (editor crew) -------
     # Fix known Spanish slips deterministically (e.g. "la penalty" -> "el
@@ -89,7 +103,7 @@ def run_match(profile_id: str, match: Match, *,
     polished = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
     if polished != narration:
         check = verify(match, polished, cfg.LANGUAGE,
-                       judge_provider=cfg.LLM_PROVIDER, use_judge=False)
+                       judge_provider=cfg.JUDGE_PROVIDER, use_judge=False)
         if check["passed"]:
             narration = polished
             result["narration"] = narration
