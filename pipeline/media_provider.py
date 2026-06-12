@@ -16,7 +16,11 @@ from core.brand_config import BrandProfile
 
 from .image_generator import generate_image
 from .match_monitor import Match
-from .team_visuals import crowd_prompt, generic_crowd_prompt
+from .team_visuals import (
+    crowd_prompt,
+    educational_crowd_prompt,
+    generic_crowd_prompt,
+)
 from .video_format import REEL, VideoFormat
 
 
@@ -67,3 +71,29 @@ def build_visuals(cfg: BrandProfile, match: Match, *, fmt: VideoFormat = REEL,
 
     on_step("media", f"Built {len(images)} crowd backdrop(s)")
     return images
+
+
+def build_topic_backdrop(cfg: BrandProfile, slug: str, *, fmt: VideoFormat = REEL,
+                         on_step=lambda *_: None) -> Path | None:
+    """Generate ONE clean celebration backdrop for a topic/educational video.
+
+    Not tied to a match: a happy crowd cheering with no smoke, flags or confetti
+    (educational_crowd_prompt), used behind the logo + subtitles. Returns the
+    image path, or None if image generation is unavailable / disabled.
+    """
+    if "flux" not in cfg.MEDIA_SOURCES:
+        on_step("media", "FLUX disabled for this profile — plain background")
+        return None
+    out = cfg.IMAGE_DIR / f"topic_{slug}"
+    out.mkdir(parents=True, exist_ok=True)
+    prompt = educational_crowd_prompt(cfg.VISUAL_STYLE, vertical=fmt.vertical)
+    dest = out / "ambience_topic.png"
+    try:
+        data = generate_image(prompt, provider=cfg.IMAGE_PROVIDER,
+                              width=fmt.width, height=fmt.height)
+        dest.write_bytes(data)
+        on_step("media", "Built clean celebration backdrop")
+        return dest
+    except Exception as e:  # noqa: BLE001
+        on_step("media", f"FLUX backdrop skipped ({e}) — plain background")
+        return None
