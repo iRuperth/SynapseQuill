@@ -122,6 +122,12 @@ class BrandProfile:
 
         # --- LLM ---
         self.LLM_PROVIDER = j.get("llm_provider", self._env_get("LLM_PROVIDER", "groq"))
+        # The guardrail judge should be a DIFFERENT model than the narrator:
+        # a model re-reading its own prose tends to miss its own mistakes.
+        # Falls back to the narrator's provider when not set.
+        self.JUDGE_PROVIDER = j.get("judge_provider",
+                                    self._env_get("JUDGE_PROVIDER",
+                                                  self.LLM_PROVIDER))
 
         # --- Voice / TTS ---
         # A named voice preset (man/woman x ES/EN) is the friendly choice; it
