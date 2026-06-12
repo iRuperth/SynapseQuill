@@ -401,9 +401,16 @@ def llm_judge(match: Match, text: str, language: str, *, provider: str | None = 
     )
     try:
         data = json.loads(repair_json(raw))
-    except Exception:
-        data = {}
+        if not isinstance(data, dict) or "grounded" not in data:
+            raise ValueError("judge returned no usable verdict")
+    except Exception as e:
+        # Unparseable judge output must NOT fail closed: a judge model that
+        # answers in prose would otherwise flag every clean narration and burn
+        # the whole retry budget. Signal "unknown" so verify() falls back to
+        # the deterministic facts layer, exactly like a transport error does.
+        return {"parsed": False, "error": str(e)}
     return {
+        "parsed": True,
         "grounded": bool(data.get("grounded", False)),
         "language_ok": bool(data.get("language_ok", False)),
         "tone_ok": bool(data.get("tone_ok", True)),
@@ -413,14 +420,21 @@ def llm_judge(match: Match, text: str, language: str, *, provider: str | None = 
 
 def verify(match: Match, text: str, language: str, *,
            judge_provider: str | None = None, use_judge: bool = True) -> dict:
-    """Combined verdict. `passed` is True only if both layers agree."""
-    facts = facts_check(match, text)
+    """Combined verdict. `passed` is True only if both layers agree.
+
+    When the judge is unreachable OR returns unparseable output, we fall back
+    to the deterministic facts layer (fail-open on the judge) rather than
+    blocking a clean narration on a flaky judge model."""
+    facts = facts_check(match, text, language)
     result = {"facts": facts, "passed": facts["ok"]}
     if use_judge:
         try:
             judge = llm_judge(match, text, language, provider=judge_provider)
             result["judge"] = judge
-            result["passed"] = facts["ok"] and judge["grounded"] and judge["language_ok"]
+            if judge.get("parsed"):
+                result["passed"] = (facts["ok"] and judge["grounded"]
+                                    and judge["language_ok"])
+            # else: judge unusable -> keep facts-only verdict (already set)
         except Exception as e:  # noqa: BLE001
             result["judge"] = {"error": str(e)}
     return result
