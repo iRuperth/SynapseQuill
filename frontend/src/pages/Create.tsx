@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react'
-import { generateFreeform, getGlobalConfig } from '../api/client'
+import { useEffect, useRef, useState } from 'react'
+import {
+  generateFreeform, generateTopicVideo, getGlobalConfig, getStatus,
+} from '../api/client'
 import { useProfile } from '../components/useProfile'
 import { useT } from '../i18n/useT'
-import type { FreeformResult, GlobalConfig } from '../types'
+import type { FreeformResult, GenerationStatus, GlobalConfig } from '../types'
 
-// Essential-level feature: the user provides any TOPIC + AUDIENCE and the app
-// generates ready-to-publish copy for each platform, in the chosen language,
-// personalised with the active profile's brand/persona preamble.
+// Create has two modes:
+//   • text  — multi-platform copy for any TOPIC + AUDIENCE (essential level).
+//   • video — a topic/educational video (clean crowd backdrop + logo +
+//             narration + subtitles), reel (9:16) or YouTube (16:9). The topic
+//             can be a free subject the model explains, or the user's own pasted
+//             content, which the narration is grounded in (never invented).
 
 const ALL_PLATFORMS = ['blog', 'twitter', 'instagram', 'linkedin'] as const
 const PLATFORM_META: Record<string, { label: string; icon: string }> = {
@@ -31,28 +36,46 @@ const TOPIC_EXAMPLE_KEYS = [
   'create.topicExample.ai',
 ]
 
+// Pipeline steps surfaced for the video progress bar (catalog: create.step.*).
+const VIDEO_STEP_KEYS = ['start', 'narrate', 'polish', 'metadata', 'media', 'voice', 'video', 'upload', 'done']
+
 export default function Create() {
   const t = useT()
   const { active } = useProfile()
   const [cfg, setCfg] = useState<GlobalConfig | null>(null)
+  const [mode, setMode] = useState<'text' | 'video'>('text')
+
+  // Shared
   const [topic, setTopic] = useState('')
   const [audience, setAudience] = useState('general')
   const [language, setLanguage] = useState('es')
+
+  // Text mode
   const [platforms, setPlatforms] = useState<string[]>([...ALL_PLATFORMS])
   const [extra, setExtra] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<FreeformResult | null>(null)
 
+  // Video mode
+  const [videoFormat, setVideoFormat] = useState<'reel' | 'youtube'>('reel')
+  const [inputMode, setInputMode] = useState<'topic' | 'source'>('topic')
+  const [sourceText, setSourceText] = useState('')
+  const [status, setStatus] = useState<GenerationStatus>({ state: 'idle' })
+  const poll = useRef<number | null>(null)
+
   useEffect(() => {
     getGlobalConfig().then((c) => { setCfg(c); setLanguage(c.languages[0] ?? 'es') })
   }, [])
+
+  // Stop polling when leaving the page.
+  useEffect(() => () => { if (poll.current) window.clearInterval(poll.current) }, [])
 
   function togglePlatform(p: string) {
     setPlatforms((cur) => (cur.includes(p) ? cur.filter((x) => x !== p) : [...cur, p]))
   }
 
-  async function run() {
+  async function runText() {
     if (!active || !topic.trim() || !platforms.length) return
     setLoading(true); setError(''); setResult(null)
     try {
@@ -66,10 +89,47 @@ export default function Create() {
     }
   }
 
+  function startPolling() {
+    if (poll.current) window.clearInterval(poll.current)
+    poll.current = window.setInterval(async () => {
+      if (!active) return
+      const s = await getStatus(active)
+      setStatus(s)
+      if (s.state === 'done' || s.state === 'error' || s.state === 'idle') {
+        if (poll.current) window.clearInterval(poll.current)
+      }
+    }, 1500)
+  }
+
+  async function runVideo() {
+    if (!active || !topic.trim()) return
+    setError('')
+    setStatus({ state: 'running', step: 'start', message: t('create.video.starting') })
+    try {
+      await generateTopicVideo(active, {
+        topic,
+        source_text: inputMode === 'source' ? sourceText : '',
+        audience,
+        format: videoFormat,
+      })
+      startPolling()
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(msg || t('create.error.generate'))
+      setStatus({ state: 'idle' })
+    }
+  }
+
   if (!cfg) return <p>{t('common.loading')}</p>
   if (!active) return <p>{t('create.selectProfile')}</p>
 
-  const canRun = !loading && !!topic.trim() && !!platforms.length
+  const busy = status.state === 'running'
+  const canRunText = !loading && !!topic.trim() && !!platforms.length
+  const canRunVideo = !busy && !!topic.trim() && (inputMode === 'topic' || !!sourceText.trim())
+  const doneVideo = status.state === 'done' && status.result
+  const videoUrl = doneVideo && status.result?.id
+    ? `/api/profiles/${active}/video/${status.result.id}`
+    : null
 
   return (
     <div>
@@ -80,8 +140,18 @@ export default function Create() {
         {t('create.subtitle')}
       </p>
 
+      {/* Mode switch: text copy vs video */}
+      <div style={{ display: 'flex', gap: 8, margin: '16px 0' }}>
+        <button type="button" onClick={() => setMode('text')} style={tab(mode === 'text')}>
+          📰 {t('create.mode.text')}
+        </button>
+        <button type="button" onClick={() => setMode('video')} style={tab(mode === 'video')}>
+          🎬 {t('create.mode.video')}
+        </button>
+      </div>
+
       {/* Two-pane layout: form on the left, results fill the right */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, 460px) 1fr', gap: 24, marginTop: 20, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, 460px) 1fr', gap: 24, marginTop: 8, alignItems: 'start' }}>
         {/* ── Form card ── */}
         <div style={{
           background: 'var(--bg-surface)', border: '1px solid var(--border)',
@@ -106,6 +176,30 @@ export default function Create() {
             </div>
           </Field>
 
+          {/* Video mode: optionally paste your own content to narrate. */}
+          {mode === 'video' && (
+            <Field label={t('create.video.inputMode')}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <button type="button" onClick={() => setInputMode('topic')} style={segBtn(inputMode === 'topic')}>
+                  💡 {t('create.video.inputMode.topic')}
+                </button>
+                <button type="button" onClick={() => setInputMode('source')} style={segBtn(inputMode === 'source')}>
+                  📋 {t('create.video.inputMode.source')}
+                </button>
+              </div>
+              {inputMode === 'source' && (
+                <textarea
+                  style={{ ...input, minHeight: 110, resize: 'vertical', lineHeight: 1.4, marginTop: 8 }}
+                  value={sourceText} placeholder={t('create.video.source.placeholder')}
+                  onChange={(e) => setSourceText(e.target.value)}
+                />
+              )}
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                {inputMode === 'source' ? t('create.video.source.hint') : t('create.video.topic.hint')}
+              </span>
+            </Field>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: 14 }}>
             <Field label={t('create.field.audience')}>
               <input style={input} value={audience} list="audiences"
@@ -121,58 +215,157 @@ export default function Create() {
             </Field>
           </div>
 
-          <Field label={t('create.field.platforms')}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {ALL_PLATFORMS.map((p) => {
-                const on = platforms.includes(p)
-                return (
-                  <button key={p} type="button" onClick={() => togglePlatform(p)} style={platformTile(on)}>
-                    <span style={{ fontSize: 16 }}>{PLATFORM_META[p].icon}</span>
-                    {PLATFORM_META[p].label}
-                    {on && <span style={{ marginLeft: 'auto', color: 'var(--accent)' }}>✓</span>}
+          {/* ── Text-only controls ── */}
+          {mode === 'text' && (
+            <>
+              <Field label={t('create.field.platforms')}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {ALL_PLATFORMS.map((p) => {
+                    const on = platforms.includes(p)
+                    return (
+                      <button key={p} type="button" onClick={() => togglePlatform(p)} style={platformTile(on)}>
+                        <span style={{ fontSize: 16 }}>{PLATFORM_META[p].icon}</span>
+                        {PLATFORM_META[p].label}
+                        {on && <span style={{ marginLeft: 'auto', color: 'var(--accent)' }}>✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </Field>
+
+              <Field label={t('create.field.extra')}>
+                <input style={input} value={extra} placeholder={t('create.extra.placeholder')}
+                  onChange={(e) => setExtra(e.target.value)} />
+              </Field>
+
+              <button onClick={runText} disabled={!canRunText} style={primaryBtn(!canRunText)}>
+                {loading ? t('create.generating') : `✨ ${t('create.generate')}`}
+              </button>
+            </>
+          )}
+
+          {/* ── Video-only controls ── */}
+          {mode === 'video' && (
+            <>
+              <Field label={t('create.video.format')}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <button type="button" onClick={() => setVideoFormat('reel')} style={segBtn(videoFormat === 'reel')}>
+                    📱 {t('create.video.format.reel')}
                   </button>
-                )
-              })}
-            </div>
-          </Field>
+                  <button type="button" onClick={() => setVideoFormat('youtube')} style={segBtn(videoFormat === 'youtube')}>
+                    🖥️ {t('create.video.format.youtube')}
+                  </button>
+                </div>
+              </Field>
 
-          <Field label={t('create.field.extra')}>
-            <input style={input} value={extra} placeholder={t('create.extra.placeholder')}
-              onChange={(e) => setExtra(e.target.value)} />
-          </Field>
+              <button onClick={runVideo} disabled={!canRunVideo} style={primaryBtn(!canRunVideo)}>
+                {busy ? t('create.video.generating') : `🎬 ${t('create.video.generate')}`}
+              </button>
+            </>
+          )}
 
-          <button onClick={run} disabled={!canRun} style={primaryBtn(!canRun)}>
-            {loading ? t('create.generating') : `✨ ${t('create.generate')}`}
-          </button>
           {error && <span style={{ color: '#f87171', fontSize: 14 }}>⚠️ {error}</span>}
         </div>
 
         {/* ── Results pane ── */}
         <div>
-          {loading && <SkeletonResults platforms={platforms} />}
-
-          {!loading && !result && (
-            <div style={{
-              padding: '60px 30px', textAlign: 'center', height: '100%',
-              background: 'var(--bg-surface)', border: '1px dashed var(--border)', borderRadius: 16,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <div style={{ fontSize: 44 }}>📰</div>
-              <p style={{ color: 'var(--text-muted)', maxWidth: 360, marginTop: 12 }}>
-                {t('create.empty')}
-              </p>
-            </div>
+          {/* Text results */}
+          {mode === 'text' && (
+            <>
+              {loading && <SkeletonResults platforms={platforms} />}
+              {!loading && !result && <EmptyHint text={t('create.empty')} />}
+              {!loading && result && (
+                <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+                  {Object.entries(result.content).map(([platform, text]) => (
+                    <ResultCard key={platform} platform={platform} text={text} />
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
-          {!loading && result && (
-            <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
-              {Object.entries(result.content).map(([platform, text]) => (
-                <ResultCard key={platform} platform={platform} text={text} />
-              ))}
-            </div>
+          {/* Video progress + result */}
+          {mode === 'video' && (
+            <>
+              {busy && (
+                <div style={statusBox}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 16 }}>
+                      🎬 <strong>{t('create.video.working')}</strong>
+                      <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+                        {status.step && VIDEO_STEP_KEYS.includes(status.step)
+                          ? t(`create.step.${status.step}`)
+                          : status.message}
+                      </span>
+                    </span>
+                  </div>
+                  <div style={{ height: 12, borderRadius: 999, background: 'var(--bg)', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', width: `${status.progress ?? 0}%`,
+                      background: 'linear-gradient(90deg, var(--accent), var(--accent-2))',
+                      transition: 'width .4s ease',
+                    }} />
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {status.progress ?? 0}%
+                  </div>
+                </div>
+              )}
+
+              {status.state === 'error' && (
+                <div style={{ ...statusBox, borderColor: '#7a3650' }}>
+                  ⚠️ {status.message || t('create.error.generate')}
+                </div>
+              )}
+
+              {doneVideo && (
+                <div style={{ display: 'grid', gap: 12 }}>
+                  <div style={{ ...statusBox, borderColor: 'var(--accent)' }}>
+                    ✅ {t('create.video.done')}
+                  </div>
+                  {videoUrl && (
+                    <video
+                      src={videoUrl} controls
+                      style={{
+                        width: '100%', maxWidth: videoFormat === 'reel' ? 360 : '100%',
+                        borderRadius: 12, background: '#000', margin: '0 auto', display: 'block',
+                      }}
+                    />
+                  )}
+                  {status.result?.metadata?.title && (
+                    <div style={{
+                      background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                      borderRadius: 12, padding: 16,
+                    }}>
+                      <strong>{status.result.metadata.title}</strong>
+                      <p style={{ color: 'var(--text-muted)', marginBottom: 0 }}>
+                        {status.result.metadata.description}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!busy && !doneVideo && status.state !== 'error' && (
+                <EmptyHint text={t('create.video.empty')} icon="🎬" />
+              )}
+            </>
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+function EmptyHint({ text, icon = '📰' }: { text: string; icon?: string }) {
+  return (
+    <div style={{
+      padding: '60px 30px', textAlign: 'center', height: '100%',
+      background: 'var(--bg-surface)', border: '1px dashed var(--border)', borderRadius: 16,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <div style={{ fontSize: 44 }}>{icon}</div>
+      <p style={{ color: 'var(--text-muted)', maxWidth: 360, marginTop: 12 }}>{text}</p>
     </div>
   )
 }
@@ -250,6 +443,25 @@ const exampleChip: React.CSSProperties = {
   background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border)',
 }
 
+function tab(on: boolean): React.CSSProperties {
+  return {
+    padding: '10px 18px', borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: 700,
+    background: on ? 'var(--accent)' : 'var(--bg-surface)',
+    color: on ? '#04211c' : 'var(--text)',
+    border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+  }
+}
+
+function segBtn(on: boolean): React.CSSProperties {
+  return {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    padding: '9px 12px', borderRadius: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+    background: on ? 'var(--bg-elevated)' : 'transparent',
+    color: 'var(--text)',
+    border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+  }
+}
+
 function platformTile(on: boolean): React.CSSProperties {
   return {
     display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
@@ -275,4 +487,9 @@ function primaryBtn(disabled: boolean): React.CSSProperties {
     cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.6 : 1,
     background: 'var(--accent)', color: '#04211c',
   }
+}
+
+const statusBox: React.CSSProperties = {
+  padding: 12, background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+  borderRadius: 10, margin: '8px 0',
 }
