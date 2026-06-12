@@ -52,10 +52,10 @@ def _credentials(cfg: BrandProfile):
 
 def _description_with_hashtags(description: str, tags: list[str]) -> str:
     """Append the hashtags to the description so they show on YouTube. Each tag
-    is normalised to a single leading '#'. Cap at 8: build_tags orders them by
-    value (competition, matchup, teams, fan tags first), only the first 3 show
-    above the title, and a long hashtag wall reads as spam and dilutes the
-    topical signal (past 60, YouTube ignores them ALL)."""
+    is normalised to a single leading '#'. Cap at 10: build_tags orders them by
+    value (competition, matchup, teams, scorers, fan tags first), only the
+    first 3 show above the title, and a long hashtag wall reads as spam and
+    dilutes the topical signal (past 60, YouTube ignores them ALL)."""
     hashtags = []
     for t in tags:
         h = "#" + t.lstrip("#")
@@ -63,7 +63,7 @@ def _description_with_hashtags(description: str, tags: list[str]) -> str:
             hashtags.append(h)
     if not hashtags:
         return description
-    line = " ".join(hashtags[:8])
+    line = " ".join(hashtags[:10])
     return f"{description}\n\n{line}".strip()
 
 

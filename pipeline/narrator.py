@@ -411,8 +411,10 @@ def _top_scorer_tags(match: Match, limit: int = 3) -> list[str]:
 
 def build_tags(match: Match) -> list[str]:
     """Deterministic hashtags in priority order (only the first few show on
-    YouTube): competition, the matchup, teams + their fan-community tags,
-    country, summary, stadium, top-3 scorers, then the brand + generic tags."""
+    YouTube): competition, the matchup, teams, top-3 scorers, the teams'
+    fan-community tags, country, summary, stadium, then brand + generic tags.
+    Scorers go BEFORE the fan tags: a scorer's name is what fans search the
+    night of the game, and anything past the visible cap never shows."""
     is_world_cup = "world cup" in (match.competition or "").lower() \
         or "mundial" in (match.competition or "").lower()
 
@@ -424,15 +426,16 @@ def build_tags(match: Match) -> list[str]:
     #    Cup the teams ARE the countries, so don't also add the host country.
     tags.append(_hashtag(f"{match.home} {match.away}"))
     tags += [_hashtag(match.home), _hashtag(match.away)]
+    # 3) Top-3 scorers (most goals first) — before the fan tags so they make
+    #    the visible cut.
+    tags += _top_scorer_tags(match, limit=3)
     tags += [t for t in (_FAN_TAGS.get(match.home), _FAN_TAGS.get(match.away)) if t]
     if not is_world_cup and match.country:
         tags.append(_hashtag(match.country))
-    # 3) Summary, then stadium.
+    # 4) Summary, then stadium.
     tags.append("#Resumen")
     if match.venue:
         tags.append(_hashtag(match.venue))
-    # 4) Top-3 scorers (most goals first).
-    tags += _top_scorer_tags(match, limit=3)
     # 5) Brand + generic reach tags last.
     tags += _GENERIC_TAGS
     # Dedupe preserving order, drop empties.
