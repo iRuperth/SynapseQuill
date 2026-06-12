@@ -232,12 +232,22 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         "matches": used, "video": str(out), "tags": tags,
         "duration": round(float(digest.duration) if hasattr(digest, "duration") else 0, 1),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "failed_segments": failed_segments,
     }
 
     # Upload the finished digest when forced by the caller (the scheduler) or
     # when the profile has auto-upload enabled. Privacy comes from the profile
     # (YOUTUBE_PRIVACY, default private; PRACTICE_MODE forces private).
-    if cfg.AUTO_UPLOAD if upload is None else upload:
+    # GATE: an AUTO upload (upload is None -> AUTO_UPLOAD) is skipped when any
+    # segment failed its guardrail; an explicit upload=True (a human asked) is
+    # honoured. The video and record are kept either way for manual review.
+    auto = upload is None
+    skip_auto = auto and cfg.AUTO_UPLOAD and failed_segments
+    if skip_auto:
+        on_step("upload", f"Skipped auto-upload: {len(failed_segments)} segment(s) "
+                          "failed the guardrail — left for manual review")
+        record["upload_skipped"] = "guardrail failed"
+    elif cfg.AUTO_UPLOAD if upload is None else upload:
         on_step("upload", f"Uploading digest to YouTube ({cfg.YOUTUBE_PRIVACY})")
         title = f"Resumen del día · {day}"
         # Real text as the description — the uploader appends the hashtags

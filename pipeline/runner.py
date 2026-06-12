@@ -164,7 +164,17 @@ def run_match(profile_id: str, match: Match, *,
     # --- 4. Upload to YouTube (Phase 2) ------------------------------
     # Upload when explicitly requested OR when the profile has AUTO_UPLOAD on,
     # so generated summaries publish themselves with the configured privacy.
-    if (do_upload or cfg.AUTO_UPLOAD) and video_path:
+    # GATE: never AUTO-publish a narration that failed every guardrail attempt
+    # (it may contain a hallucination the retries could not fix). The video is
+    # still generated and saved — it just waits for a manual upload/review.
+    # An explicit do_upload (a human ran this on purpose) is honoured anyway.
+    guardrail_failed = not result.get("guardrail", {}).get("passed", True)
+    block_auto = cfg.AUTO_UPLOAD and not do_upload and guardrail_failed
+    if block_auto:
+        on_step("upload", "Skipped auto-upload: narration failed the guardrail "
+                          "— left in the library for manual review")
+        result["upload_skipped"] = "guardrail failed"
+    elif (do_upload or cfg.AUTO_UPLOAD) and video_path:
         on_step("upload", f"Uploading to YouTube ({cfg.YOUTUBE_PRIVACY})")
         try:
             from .publishers import upload_youtube
