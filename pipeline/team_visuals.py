@@ -216,3 +216,28 @@ def generic_crowd_prompt(visual_style: str, vertical: bool = True) -> str:
         f"colours, supporters in shirts of several different teams, flares and "
         f"confetti, vibrant colours, {comp}, {_NO_TEXT}"
     )
+
+
+# A clean, neutral celebration crowd for educational / "did you know?" videos:
+# a packed stand of cheering people, NO smoke, NO flares, NO flags, NO confetti,
+# NO team colours or banners — just a joyful crowd as a calm backdrop behind the
+# logo + subtitles. Negations are reinforced positively (schnell follows "the
+# people simply clap and cheer" better than a bare "no flags").
+_EDU_CLEAN = ("the people are simply clapping, smiling and cheering with raised "
+              "hands and open palms; absolutely NO flags, NO banners, NO scarves, "
+              "NO confetti, NO smoke, NO flares, NO fireworks, NO pyrotechnics, "
+              "no haze and no fog in the air; the air is perfectly clear; no team "
+              "colours and no jerseys of any specific club or country")
+
+
+def educational_crowd_prompt(visual_style: str, vertical: bool = True) -> str:
+    """Backdrop for a topic/educational video: a happy crowd celebrating in the
+    stands, but CLEAN — no smoke, no flags, no confetti, no team colours. Just
+    people cheering, so the logo, narration and subtitles stay the focus."""
+    comp = "vertical 9:16 composition" if vertical else "wide 16:9 composition"
+    return (
+        f"{visual_style}, photorealistic {_CLOSEUP}, a joyful crowd of ordinary "
+        f"people in the stands celebrating and cheering at a sports stadium, "
+        f"everyday casual clothes in neutral colours, warm even daylight, "
+        f"{_EDU_CLEAN}, {comp}, {_NO_TEXT}"
+    )
