@@ -182,8 +182,8 @@ export const CATALOG: Catalog = {
   // ── Create page ──
   'create.title': { es: 'Crear contenido', en: 'Create content' },
   'create.subtitle': {
-    es: 'Escribe cualquier tema y genera texto listo para publicar en cada plataforma, adaptado a la audiencia y personalizado con tu perfil de marca.',
-    en: 'Type any topic and generate publish-ready copy for each platform, tailored to your audience and personalized with your brand profile.',
+    es: 'Escribe cualquier tema y genera texto listo para publicar o un video de datos curiosos con narración y subtítulos, personalizado con tu perfil de marca.',
+    en: 'Type any topic and generate publish-ready copy or a "did you know" video with narration and subtitles, personalized with your brand profile.',
   },
   'create.selectProfile': { es: 'Selecciona un perfil primero.', en: 'Select a profile first.' },
   'create.error.generate': { es: 'Error generando contenido', en: 'Error generating content' },
@@ -227,6 +227,46 @@ export const CATALOG: Catalog = {
     es: 'Las estrellas a seguir en el Mundial 2026',
     en: 'The star players to watch at the 2026 World Cup',
   },
+
+  // ── Create · mode switch + video sub-mode ──
+  'create.mode.text': { es: 'Texto para redes', en: 'Social copy' },
+  'create.mode.video': { es: 'Video', en: 'Video' },
+  'create.video.inputMode': { es: 'Contenido', en: 'Content' },
+  'create.video.inputMode.topic': { es: 'Explicar un tema', en: 'Explain a topic' },
+  'create.video.inputMode.source': { es: 'Pegar mi contenido', en: 'Paste my content' },
+  'create.video.source.placeholder': {
+    es: 'Pega aquí tu texto, datos o el artículo a narrar…',
+    en: 'Paste your text, facts or the article to narrate…',
+  },
+  'create.video.source.hint': {
+    es: 'El video se narra solo con tu texto: no se inventa nada que no esté ahí.',
+    en: 'The video is narrated only from your text: nothing not in it is invented.',
+  },
+  'create.video.topic.hint': {
+    es: 'La IA explica el tema sin inventar estadísticas, fechas ni nombres dudosos.',
+    en: 'The AI explains the topic without inventing uncertain stats, dates or names.',
+  },
+  'create.video.format': { es: 'Formato', en: 'Format' },
+  'create.video.format.reel': { es: 'Reel (9:16)', en: 'Reel (9:16)' },
+  'create.video.format.youtube': { es: 'YouTube (16:9)', en: 'YouTube (16:9)' },
+  'create.video.generate': { es: 'Crear video', en: 'Create video' },
+  'create.video.generating': { es: 'Creando video…', en: 'Creating video…' },
+  'create.video.starting': { es: 'Iniciando…', en: 'Starting…' },
+  'create.video.working': { es: 'Creando tu video', en: 'Creating your video' },
+  'create.video.done': { es: 'Video listo. También está en tu Biblioteca.', en: 'Video ready. It is also in your Library.' },
+  'create.video.empty': {
+    es: 'Tu video aparecerá aquí: fondo limpio con el logo arriba, narración y subtítulos.',
+    en: 'Your video will appear here: a clean backdrop with the logo on top, narration and subtitles.',
+  },
+  'create.step.start': { es: 'Iniciando…', en: 'Starting…' },
+  'create.step.narrate': { es: 'Escribiendo la narración', en: 'Writing the narration' },
+  'create.step.polish': { es: 'Puliendo el guion', en: 'Polishing the script' },
+  'create.step.metadata': { es: 'Generando título y descripción', en: 'Generating title and description' },
+  'create.step.media': { es: 'Creando el fondo', en: 'Creating the backdrop' },
+  'create.step.voice': { es: 'Sintetizando voz y subtítulos', en: 'Synthesising voice and subtitles' },
+  'create.step.video': { es: 'Montando el video', en: 'Assembling the video' },
+  'create.step.upload': { es: 'Subiendo a YouTube', en: 'Uploading to YouTube' },
+  'create.step.done': { es: 'Listo', en: 'Done' },
 
   // ── Calendar page ──
   'calendar.title': { es: 'Calendario', en: 'Calendar' },
