@@ -9,8 +9,8 @@ data provider and its identifiers so switching is a single choice.
 # key -> preset. `provider` picks the data source; the id fields are read by
 # that source (apifootball uses league_id/season; thesportsdb uses tsdb_league).
 COMPETITIONS = {
-    # Default until the World Cup starts: Spanish first division (La Liga),
-    # CURRENT season via ESPN (free, with scorers+minutes). Never old seasons.
+    # Spanish first division (La Liga), CURRENT season via ESPN (free, with
+    # scorers+minutes). Never old seasons. Was the default pre-tournament.
     "laliga": {
         "label": "La Liga — Primera División (España, temporada actual)",
         "provider": "espn",
@@ -18,7 +18,7 @@ COMPETITIONS = {
         "mode": "latest",
         "scorers": "full",          # ESPN gives scorers + minutes for free
     },
-    # Switch to this once the 2026 World Cup kicks off (11 Jun 2026).
+    # The default since the tournament kicked off on 11 Jun 2026.
     "worldcup_2026": {
         "label": "Mundial 2026 (FIFA World Cup)",
         "provider": "espn",
@@ -81,7 +81,7 @@ COMPETITIONS = {
     },
 }
 
-DEFAULT = "laliga"
+DEFAULT = "worldcup_2026"
 
 
 def get(key: str) -> dict:

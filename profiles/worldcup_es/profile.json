@@ -15,7 +15,7 @@
     "values": "accuracy of scores and scorers above all"
   },
   "competition": {
-    "preset": "laliga"
+    "preset": "worldcup_2026"
   },
   "youtube": {
     "auto_upload": false
