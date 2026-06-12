@@ -202,3 +202,97 @@ def run_fixture_id(profile_id: str, fixture_id, **kwargs) -> dict:
     cfg = BrandProfile(profile_id)
     match = get_data_source(cfg).fixture(fixture_id)
     return run_match(profile_id, match, **kwargs)
+
+
+def _topic_slug(topic: str) -> str:
+    """A short, filesystem-safe slug from a topic, for the output stem."""
+    base = "".join(c if c.isalnum() else "-" for c in (topic or "").lower())
+    base = "-".join(p for p in base.split("-") if p)[:48]
+    return base or "tema"
+
+
+def run_topic_video(profile_id: str, topic: str, *,
+                    source_text: str = "", audience: str = "",
+                    on_step: StepCb = _noop_step,
+                    check_cancel: CancelCb = _noop_cancel,
+                    do_video: bool = True,
+                    do_upload: bool = False,
+                    video_format: str = "reel") -> dict:
+    """Generate a topic/educational video (no match): clean celebration backdrop
+    + logo, narration and subtitles.
+
+    `topic` is the subject ("nuevas reglas del Mundial"). If `source_text` is
+    given, the narration is grounded ONLY in that text; otherwise the model
+    explains the topic without fabricating facts. Returns a result dict.
+    """
+    from .video_format import get_format
+    cfg = BrandProfile(profile_id)
+    fmt = get_format(video_format)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    stem = f"topic_{_topic_slug(topic)}_{stamp}"
+    result: dict = {"type": "topic", "topic": topic, "format": fmt.key}
+
+    # --- 1. Narration -------------------------------------------------
+    on_step("narrate", f"Writing narration for «{topic}»")
+    from .narrator import narrate_topic, topic_metadata
+    narration = narrate_topic(
+        topic, language=cfg.LANGUAGE, system_preamble=cfg.system_preamble,
+        provider=cfg.LLM_PROVIDER, video_format=fmt.key,
+        source_text=source_text, audience=audience)
+    result["narration"] = narration
+    if check_cancel():
+        return {**result, "status": "cancelled"}
+
+    # --- 1b. Polish: make the script sound human ----------------------
+    # No match guardrail here (there is no match to verify against) — the
+    # grounding is the user's own text or the no-fabrication rule. We still run
+    # the deterministic Spanish polish so the spoken script reads naturally.
+    on_step("polish", "Reviewing narration so it sounds natural")
+    from .text_polish import polish
+    narration = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
+    result["narration"] = narration
+
+    # --- 2. YouTube metadata -----------------------------------------
+    on_step("metadata", "Generating YouTube metadata")
+    meta = topic_metadata(topic, narration, language=cfg.LANGUAGE,
+                          provider=cfg.LLM_PROVIDER)
+    result["metadata"] = meta
+    if check_cancel():
+        return {**result, "status": "cancelled"}
+
+    # --- 3. Backdrop + voice + video ---------------------------------
+    video_path = None
+    if do_video:
+        on_step("media", "Generating clean celebration backdrop")
+        from .media_provider import build_topic_backdrop
+        backdrop = build_topic_backdrop(cfg, _topic_slug(topic) + "_" + stamp,
+                                        fmt=fmt, on_step=on_step)
+
+        on_step("voice", "Synthesising narration voice + subtitles")
+        from .voice_generator import synthesize
+        audio_path, subtitles = synthesize(cfg, narration, name=stem)
+
+        on_step("video", "Assembling .mp4")
+        from .video_assembler import assemble_plain
+        video_path = assemble_plain(cfg, stem, backdrop, audio_path, subtitles, fmt=fmt)
+        result["video"] = str(video_path)
+
+    # --- 4. Upload to YouTube (optional) -----------------------------
+    if (do_upload or cfg.AUTO_UPLOAD) and video_path:
+        on_step("upload", f"Uploading to YouTube ({cfg.YOUTUBE_PRIVACY})")
+        try:
+            from .publishers import upload_youtube
+            result["youtube_url"] = upload_youtube(cfg, video_path, meta)
+            result["youtube_privacy"] = cfg.YOUTUBE_PRIVACY
+        except Exception as e:  # noqa: BLE001
+            on_step("upload", f"Auto-upload failed: {e}")
+            result["upload_error"] = str(e)
+
+    # --- 5. Persist content record -----------------------------------
+    record = {**result, "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    out = cfg.CONTENT_DIR / f"{stem}.json"
+    out.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+    result["status"] = "done"
+    result["record_path"] = str(out)
+    on_step("done", f"Finished «{topic}»")
+    return result
