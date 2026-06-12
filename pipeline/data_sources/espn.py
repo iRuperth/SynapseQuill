@@ -40,10 +40,10 @@ class EspnSource(FootballDataSource):
         self.base = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{self.slug}"
 
     # ------------------------------------------------------------------
-    def _get(self, path: str, params: dict) -> dict:
+    def _get(self, path: str, params: dict, ttl: float | None = None) -> dict:
         from . import cache
         key = ("espn", self.slug, path, tuple(sorted(params.items())))
-        cached = cache.get(key)
+        cached = cache.get(key, max_age=ttl)
         if cached is not None:
             return cached
         r = requests.get(f"{self.base}/{path}", params=params, timeout=30)
@@ -102,8 +102,8 @@ class EspnSource(FootballDataSource):
         return ""
 
     # ------------------------------------------------------------------
-    def _scoreboard(self, dates: str) -> list[Match]:
-        data = self._get("scoreboard", {"dates": dates, "limit": 300})
+    def _scoreboard(self, dates: str, ttl: float | None = None) -> list[Match]:
+        data = self._get("scoreboard", {"dates": dates, "limit": 300}, ttl=ttl)
         league_name = ((data.get("leagues") or [{}])[0]).get("name", "")
         matches = []
         for ev in data.get("events", []):
@@ -115,7 +115,14 @@ class EspnSource(FootballDataSource):
 
     def fixtures_on(self, day: str | None = None) -> list[Match]:
         day = (day or date.today().isoformat()).replace("-", "")
-        return self._scoreboard(day)
+        # Yesterday's and today's scoreboards are LIVE data: cache them for
+        # only 60s — under the scheduler's poll interval — so a result is
+        # seen moments after full time, not when the 6h snapshot expires.
+        # ESPN is keyless and free, there is no quota to protect; older days
+        # are final and keep the long default TTL.
+        live = {(date.today() - timedelta(days=d)).strftime("%Y%m%d")
+                for d in (0, 1)}
+        return self._scoreboard(day, ttl=60 if day in live else None)
 
     def latest_finished(self, limit: int = 10) -> list[Match]:
         # Scan the last ~45 days; return the most recent finished matches.

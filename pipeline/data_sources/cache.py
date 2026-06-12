@@ -21,8 +21,13 @@ def _key(parts: tuple) -> Path:
     return _CACHE_DIR / f"{h}.json"
 
 
-def get(parts: tuple):
-    """Return cached value for `parts`, or None if missing/expired."""
+def get(parts: tuple, max_age: float | None = None):
+    """Return cached value for `parts`, or None if missing/expired.
+
+    `max_age` overrides the default TTL. The 6h default exists to protect
+    API-Football's 100-requests/day quota on data that no longer changes;
+    a LIVE scoreboard poll must pass a short max_age instead, or a snapshot
+    taken mid-match keeps answering "in progress" for hours after full time."""
     f = _key(parts)
     if not f.exists():
         return None
@@ -30,7 +35,8 @@ def get(parts: tuple):
         blob = json.loads(f.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
-    if time.time() - blob.get("_ts", 0) > _TTL_SECONDS:
+    ttl = _TTL_SECONDS if max_age is None else max_age
+    if time.time() - blob.get("_ts", 0) > ttl:
         return None
     return blob.get("data")
 
