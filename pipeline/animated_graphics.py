@@ -608,3 +608,40 @@ def build_animated_clips(cfg: BrandProfile, match: Match, total: float,
     # Always brand the video with the F88tball logo (not the competition logo).
     set_logo(_BRAND_LOGO if _BRAND_LOGO.exists() else None)
     return [unified_clip(match, cfg.LANGUAGE, total)]
+
+
+# ── Plain topic clip: just the backdrop + pulsing logo, no scorebug ──
+def _plain_frame(p: float, *, backdrop=None, total=None, logo=None):
+    """One frame for a topic/educational video: the (darkened) crowd backdrop or
+    the flat brand background, with only the pulsing logo at the top. No
+    scoreboard, no team names, no event rows — the narration + subtitles carry
+    the content. Backdrop/logo/total are captured per clip (see _unified_frame)."""
+    bd = backdrop if backdrop is not None else _BACKDROP
+    img = (bd.copy() if bd is not None else Image.new("RGB", (W, H), _BG)).convert("RGBA")
+    _paste_logo(img, p, logo=logo, total=total)
+    return img
+
+
+def plain_clip(duration: float):
+    import numpy as np
+    from moviepy import VideoClip
+
+    # Capture per-clip state now (the frame fn is lazy; see unified_clip).
+    backdrop, logo, total = _BACKDROP, _LOGO, duration
+
+    def make(t):
+        return np.array(_plain_frame(
+            min(t / duration, 1.0),
+            backdrop=backdrop, logo=logo, total=total).convert("RGB"))
+
+    return VideoClip(make, duration=duration)
+
+
+def build_plain_clip(total: float, background=None) -> list:
+    """Return ONE clip with just the crowd backdrop + pulsing brand logo (no
+    scorebug). For topic/educational videos where there is no match to show."""
+    global _TOTAL
+    _TOTAL = float(total)
+    set_background(background)
+    set_logo(_BRAND_LOGO if _BRAND_LOGO.exists() else None)
+    return [plain_clip(total)]
