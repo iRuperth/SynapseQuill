@@ -206,3 +206,40 @@ def assemble(cfg: BrandProfile, match: Match, images: list[Path],
     audio.close()
     video.close()
     return out
+
+
+def assemble_plain(cfg: BrandProfile, out_stem: str, backdrop: Path | None,
+                   audio_path: Path, subtitles: list[dict],
+                   fmt: VideoFormat = REEL) -> Path:
+    """Render a topic/educational .mp4: a clean crowd backdrop + pulsing logo,
+    narration audio and karaoke subtitles. No scorebug, no match data.
+
+    `out_stem` names the output file (e.g. 'topic_<id>'). `backdrop` may be None,
+    in which case the flat brand background is used.
+    """
+    from moviepy import AudioFileClip, CompositeAudioClip, CompositeVideoClip
+
+    from .animated_graphics import build_plain_clip, set_format
+    set_format(fmt)
+
+    audio = AudioFileClip(str(audio_path))
+    total = float(audio.duration)
+
+    # Background music sits well below the narration, same as the match path, but
+    # with no goal swells (there are no goals) — a steady quiet bed.
+    base = float(os.getenv("MUSIC_VOLUME", "0.08"))
+    music = _background_music(total, [], base, base)
+    if music is not None:
+        audio = CompositeAudioClip([music, audio])
+
+    anim = build_plain_clip(total, background=str(backdrop) if backdrop else None)
+    layers = [*anim, *_subtitle_clips(subtitles, total, fmt)]
+    video = CompositeVideoClip(layers, size=(fmt.width, fmt.height)).with_audio(audio)
+
+    out = cfg.VIDEO_DIR / f"{out_stem}.mp4"
+    video.write_videofile(
+        str(out), fps=24, codec="libx264", audio_codec="aac", logger=None,
+    )
+    audio.close()
+    video.close()
+    return out
