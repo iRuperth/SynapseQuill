@@ -303,6 +303,131 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
     return call_llm(messages, provider=provider, max_tokens=600, label="Narrator")
 
 
+# ── Topic / educational narration (no match) ─────────────────────────
+# Spoken length for a topic video. Reel is a short vertical clip, the YouTube
+# format can carry a bit more. Tuned so the narration fits a ~30-60s short.
+_TOPIC_LENGTH = {
+    "reel": "55-90 words — a punchy short. One clear idea, well explained.",
+    "youtube": "120-200 words — room to explain the idea properly with an "
+               "example, still tight and engaging.",
+}
+
+
+def narrate_topic(topic: str, *, language: str = "es", system_preamble: str = "",
+                  provider: str | None = None, video_format: str = "reel",
+                  source_text: str = "", audience: str = "") -> str:
+    """Return a spoken script for a topic/educational ('did you know?') video.
+
+    Two input modes:
+      • source_text given — the user pasted the content/facts; narrate ONLY what
+        it says (rephrase for spoken flow, never add facts it does not contain).
+      • topic only — explain the topic accurately for a general audience, WITHOUT
+        inventing statistics, dates, names or quotes you are not sure of.
+
+    No match data and no goal/card guardrail applies here — the grounding is the
+    user's own text (or the no-fabrication rule), so this is the "suave" path.
+    """
+    lang = _LANG_NAME.get(language, "Spanish")
+    length = _TOPIC_LENGTH.get(video_format, _TOPIC_LENGTH["reel"])
+    aud = (f" Tailor it to this audience: {audience.strip()}."
+           if audience.strip() else "")
+
+    if source_text.strip():
+        grounding = (
+            "The user has provided the SOURCE CONTENT below. Narrate ONLY what it "
+            "says: rephrase and tighten it for spoken delivery, but NEVER add a "
+            "statistic, date, name, rule or claim that is not in the source. If "
+            "the source is thin, keep the script short rather than padding it "
+            "with invented detail.")
+        user = ("Turn this content into the spoken script:\n\n"
+                f"Topic: {topic}\n\nSource content:\n{source_text.strip()}")
+    else:
+        grounding = (
+            "Explain the topic accurately for a general audience. Do NOT invent "
+            "statistics, exact dates, names, records or quotes — if you are not "
+            "sure of a precise figure, speak in general terms instead of guessing.")
+        user = f"Write the spoken script for this topic:\n\nTopic: {topic}"
+
+    system = (system_preamble + "\n\n" if system_preamble else "") + (
+        f"You are an engaging, passionate sports-content narrator. Write ONLY in {lang}. "
+        "This is a short, informative 'did-you-know'/explainer video (e.g. new "
+        "rules, curious facts, history), NOT a live match commentary — so do NOT "
+        "use goal shouts, scorelines or play-by-play.\n"
+        "- Open with a HOOK that makes the viewer stop scrolling (e.g. '¿Sabías "
+        "que...?', 'Esto te va a sorprender...'). Vary it.\n"
+        "- Explain the idea clearly, in short, lively sentences with warmth and "
+        "energy — like a friend telling you something fascinating.\n"
+        "- Put a few key words in CAPITALS for emphasis, but sparingly.\n"
+        "- Close with a short, natural call to action inviting viewers to FOLLOW "
+        "and LIKE for more. Make it genuine, never spammy, and vary it.\n"
+        f"- {grounding}{aud}\n"
+        "- Write FLAWLESS, natural grammar. Keep it family-friendly and "
+        "brand-safe: NO profanity or vulgar expressions.\n"
+        f"{length} Output ONLY the spoken script: no headings, markdown, hashtags "
+        "or stage directions.\n"
+        f"ABSOLUTE LANGUAGE RULE (overrides everything above): write the ENTIRE "
+        f"script in {lang} ONLY — the instructions above are in English, but your "
+        f"output must be 100% {lang}."
+    )
+
+    return call_llm(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        provider=provider, max_tokens=600, label="Narrator-Topic",
+    )
+
+
+def topic_metadata(topic: str, narration: str, *, language: str = "es",
+                   provider: str | None = None) -> dict:
+    """YouTube title + description + tags for a topic video (LLM, no match facts).
+
+    Grounded in the narration so it never claims more than the video says.
+    """
+    lang = _LANG_NAME.get(language, "Spanish")
+    system = (
+        f"You generate a YouTube title and description in {lang} for a short "
+        "football explainer/'did you know' video. Respond as JSON with "
+        '"title" (<=90 chars, catchy) and "description" (2-3 sentences). Base it '
+        "ONLY on the narration given — never add facts it does not state. JSON only."
+    )
+    user = f"Topic: {topic}\n\nNarration:\n{narration}"
+    raw = call_llm(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        provider=provider, max_tokens=400, label="YT-Meta-Topic",
+    )
+    import json
+
+    from json_repair import repair_json
+    try:
+        data = json.loads(repair_json(raw))
+    except Exception:
+        data = {}
+    return {
+        "title": (data.get("title") or topic)[:90],
+        "description": data.get("description") or topic,
+        "tags": build_topic_tags(topic),
+    }
+
+
+def build_topic_tags(topic: str) -> list[str]:
+    """Deterministic hashtags for a topic video: a CamelCase tag of the topic's
+    key words, plus the brand + generic reach tags. No team/scorer tags (there is
+    no match)."""
+    tags: list[str] = []
+    # A CamelCase tag from the first few significant words of the topic.
+    words = [w for w in (topic or "").replace("-", " ").split()
+             if w.lower() not in {"de", "del", "la", "el", "los", "las", "y",
+                                  "the", "of", "a", "an", "new", "nuevas", "nuevo"}]
+    if words:
+        tags.append(_hashtag(" ".join(words[:4])))
+    tags += ["#CuriosidadesFutbol", "#Mundial2026", *_GENERIC_TAGS]
+    seen, out = set(), []
+    for t in tags:
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
 def _hashtag(text: str) -> str:
     """Turn a name into a CamelCase hashtag: 'Real Madrid' -> '#RealMadrid'."""
     parts = "".join(w.capitalize() for w in text.replace("-", " ").split())
