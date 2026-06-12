@@ -52,13 +52,34 @@ def _render(platform: str, lang: str, preamble: str, facts_label: str,
 # ── Match mode (existing pipeline) ───────────────────────────────────
 def generate_platform(cfg: BrandProfile, match: Match, platform: str,
                       *, provider: str | None = None) -> str:
-    """Generate text for one platform from a match (constrained to facts)."""
-    return _render(
+    """Generate text for one platform from a match (constrained to facts).
+
+    Each draft is run through the deterministic facts check (cheap, no judge)
+    so a social post never invents a score, card colour or goal type; on a
+    failure it regenerates once with the reasons fed back. ordered_score is
+    off — a post is not running play-by-play, so its last score token need
+    not be the final."""
+    from agents.guardrail import facts_check
+
+    base_grounding = ("Use ONLY the given match facts — never invent scorers, "
+                      "minutes or scores.")
+    text = _render(
         platform, _LANG.get(cfg.LANGUAGE, "Spanish"), cfg.system_preamble,
-        "Match facts", _facts_block(match),
-        "Use ONLY the given match facts — never invent scorers, minutes or scores.",
+        "Match facts", _facts_block(match), base_grounding,
         provider=provider or cfg.LLM_PROVIDER, label=f"Content-{platform}",
     )
+    check = facts_check(match, text, cfg.LANGUAGE, ordered_score=False)
+    if not check["ok"]:
+        reasons = "; ".join(check["issues"])
+        text = _render(
+            platform, _LANG.get(cfg.LANGUAGE, "Spanish"), cfg.system_preamble,
+            "Match facts", _facts_block(match),
+            f"{base_grounding} A previous draft was rejected for: {reasons}. "
+            "Fix exactly that — copy every name, card colour and goal type "
+            "EXACTLY as given.",
+            provider=provider or cfg.LLM_PROVIDER, label=f"Content-{platform}",
+        )
+    return text
 
 
 def generate_all(cfg: BrandProfile, match: Match, platforms: list[str] | None = None,
