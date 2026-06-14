@@ -14,7 +14,7 @@
 set -euo pipefail
 
 LABEL="com.f88ball.scheduler"
-PROJECT_DIR="/Users/rup/Documents/DevelopmentLocal/SynapseQuill"
+PROJECT_DIR="/Users/rup/Documents/DevelopmentLocal/F88tball"
 SRC_PLIST="$PROJECT_DIR/scripts/$LABEL.plist"
 DEST_PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$PROJECT_DIR/profiles/worldcup_es/output/logs/scheduler.log"
@@ -37,9 +37,13 @@ case "${1:-status}" in
     echo "⏹  Stopped (won't start again until you run 'start'/'install')."
     ;;
   status)
-    if launchctl list | grep -q "$LABEL"; then
+    # Grab the full list first; piping straight into `grep -q` can SIGPIPE
+    # launchctl, which under `pipefail` makes the pipe report failure even when
+    # the agent IS loaded (false "Not running").
+    line="$(launchctl list | grep "$LABEL" || true)"
+    if [ -n "$line" ]; then
       echo "🟢 Running:"
-      launchctl list | grep "$LABEL"
+      echo "$line"
     else
       echo "🔴 Not running."
     fi

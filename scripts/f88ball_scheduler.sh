@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/Users/rup/Documents/DevelopmentLocal/SynapseQuill"
+PROJECT_DIR="/Users/rup/Documents/DevelopmentLocal/F88tball"
 PROFILE="worldcup_es"
 INTERVAL="120"   # seconds between polls
 
