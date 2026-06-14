@@ -170,6 +170,14 @@ class BrandProfile:
             j.get("youtube", {}).get("auto_upload",
                                      self._env_get("AUTO_UPLOAD", "false"))
         ).lower() == "true"
+        # Optional playlist every uploaded video is added to, e.g. Reels
+        # Mundial 2026. Public, not a secret, so it lives in profile.json;
+        # YOUTUBE_PLAYLIST_ID in .env still works as an override. The playlist
+        # must belong to the same channel as the OAuth token.
+        self.YOUTUBE_PLAYLIST_ID = (
+            j.get("youtube", {}).get("playlist_id")
+            or self._env_get("YOUTUBE_PLAYLIST_ID", "")
+        )
 
         # --- Output dirs ---
         self.OUTPUT_DIR = self.dir / "output"
@@ -236,7 +244,8 @@ class BrandProfile:
             "media": {"sources": self.MEDIA_SOURCES, "image_provider": self.IMAGE_PROVIDER},
             "style": {"visual_style": self.VISUAL_STYLE},
             "youtube": {"practice_mode": self.PRACTICE_MODE, "privacy": self.YOUTUBE_PRIVACY,
-                        "auto_upload": self.AUTO_UPLOAD},
+                        "auto_upload": self.AUTO_UPLOAD,
+                        "playlist_id": self.YOUTUBE_PLAYLIST_ID},
             "has_system_preamble": bool(self.system_preamble),
         }
 
