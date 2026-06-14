@@ -55,17 +55,26 @@ def cmd_report(cfg: BrandProfile):
 _DIGEST_FORMAT = "youtube"
 
 
+# How many past days to look back over for an unbuilt digest. A World Cup
+# plays every day, so the digest is daily: each day with fixtures, once all of
+# them have finished, becomes its own recap. The window lets a day that was
+# missed while still in progress still get its digest a day or two later.
+_DIGEST_LOOKBACK_DAYS = 4
+
+
 def _maybe_run_digest(cfg: BrandProfile, source, upload: bool):
-    """Build the matchday (jornada) digest once the round is OVER: a day that
-    had games, all of them finished, and nothing scheduled for the following
-    day (a league round ends on its last day; mid-round days keep waiting, and
-    their games are picked up by the round window when the digest runs). The
-    digest's own record file marks a day as done, so it never re-generates."""
+    """Build the DAILY digest for every recent day whose fixtures have all
+    finished. The World Cup plays every day, so the recap is per day: a day
+    that had games and has them ALL finished becomes its own digest. Today is
+    excluded so a day is only summarised once it is fully played. The digest's
+    own record file marks a day as done, so it never re-generates."""
     from datetime import date, timedelta
 
     from pipeline.digest import run_daily_digest
 
-    for offset in (1, 0):                      # yesterday first (post-midnight ends)
+    # Oldest first, so missed days are filled in chronological order. Skip today
+    # (offset 0): its games may still be in progress.
+    for offset in range(_DIGEST_LOOKBACK_DAYS, 0, -1):
         d = date.today() - timedelta(days=offset)
         day = d.isoformat()
         if (cfg.CONTENT_DIR / f"digest_{day}_{_DIGEST_FORMAT}.json").exists():
@@ -73,9 +82,7 @@ def _maybe_run_digest(cfg: BrandProfile, source, upload: bool):
         fixtures = source.fixtures_on(day)
         if not fixtures or not all(m.is_finished for m in fixtures):
             continue                            # no games / still playing
-        if source.fixtures_on((d + timedelta(days=1)).isoformat()):
-            continue                            # round continues tomorrow — wait
-        print(f"[scheduler] matchday {day} complete — building the digest...")
+        print(f"[scheduler] {day} complete ({len(fixtures)} matches) — building the digest...")
         run_daily_digest(cfg.id, day, _DIGEST_FORMAT, upload=upload or None,
                          on_step=lambda step, msg: print(f"[digest:{step}] {msg}"))
 

@@ -12,13 +12,14 @@ Reuses narrator, team-coloured media_provider, animated_graphics and Edge-TTS.
 """
 
 import json
+import re
 import time
 from collections.abc import Callable
 
 from core.brand_config import BrandProfile
 
 from .match_monitor import Match
-from .narrator import build_tags, narrate
+from .narrator import build_digest_tags, narrate
 from .video_format import get_format
 
 StepCb = Callable[[str, str], None]
@@ -98,28 +99,88 @@ def _stitch_with_crossfade(segments: list):
 
 
 def _matchday_window(source, day: str, on_step) -> list:
-    """All finished matches of the JORNADA around `day`. A league round is played
-    across consecutive days (Fri-Mon) and games that start late cross midnight,
-    so a single calendar day misses half the round. We gather a small window of
-    days around `day` and dedupe by fixture id."""
-    from datetime import date as _d
-    from datetime import timedelta
-    try:
-        y, mo, dd = (int(x) for x in day.split("-"))
-        center = _d(y, mo, dd)
-    except (ValueError, AttributeError):
-        return [m for m in source.fixtures_on(day) if m.is_finished]
+    """All finished matches played ON `day`. The World Cup plays every day, so a
+    digest covers a single calendar day: its 3-4 fixtures become one recap. We
+    dedupe by fixture id and order by kickoff so the recap follows the day."""
+    on_step("fetch", f"Fetching matches on {day}")
     seen, out = set(), []
-    # 3 days before .. 1 day after covers a weekend round even across midnight.
-    for delta in range(-3, 2):
-        d = (center + timedelta(days=delta)).isoformat()
-        on_step("fetch", f"Fetching matchday around {d}")
-        for m in source.fixtures_on(d):
-            if m.is_finished and m.fixture_id not in seen:
-                seen.add(m.fixture_id)
-                out.append(m)
+    for m in source.fixtures_on(day):
+        if m.is_finished and m.fixture_id not in seen:
+            seen.add(m.fixture_id)
+            out.append(m)
     out.sort(key=lambda m: (m.date or "", m.kickoff or ""))
     return out
+
+
+# Spanish month names for a human-readable digest title, indexed 1-12.
+_MONTHS_ES = ("", "enero", "febrero", "marzo", "abril", "mayo", "junio",
+              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+
+# ESPN team name -> Spanish, for the digest title. Covers every nation in the
+# World Cup 2026 field; an unknown name falls through to its English form so a
+# title is never blank. Bracket placeholders ('Group A Winner') never reach a
+# digest because those fixtures are not finished.
+_TEAMS_ES = {
+    "Algeria": "Argelia", "Argentina": "Argentina", "Australia": "Australia",
+    "Austria": "Austria", "Belgium": "Bélgica",
+    "Bosnia-Herzegovina": "Bosnia-Herzegovina", "Brazil": "Brasil",
+    "Canada": "Canadá", "Cape Verde": "Cabo Verde", "Colombia": "Colombia",
+    "Congo DR": "RD del Congo", "Croatia": "Croacia", "Curaçao": "Curazao",
+    "Czechia": "Chequia", "Ecuador": "Ecuador", "Egypt": "Egipto",
+    "England": "Inglaterra", "France": "Francia", "Germany": "Alemania",
+    "Ghana": "Ghana", "Haiti": "Haití", "Iran": "Irán", "Iraq": "Irak",
+    "Ivory Coast": "Costa de Marfil", "Japan": "Japón", "Jordan": "Jordania",
+    "Mexico": "México", "Morocco": "Marruecos", "Netherlands": "Países Bajos",
+    "New Zealand": "Nueva Zelanda", "Norway": "Noruega", "Panama": "Panamá",
+    "Paraguay": "Paraguay", "Portugal": "Portugal", "Qatar": "Catar",
+    "Saudi Arabia": "Arabia Saudita", "Scotland": "Escocia",
+    "Senegal": "Senegal", "South Africa": "Sudáfrica",
+    "South Korea": "Corea del Sur", "Spain": "España", "Sweden": "Suecia",
+    "Switzerland": "Suiza", "Tunisia": "Túnez", "Türkiye": "Turquía",
+    "United States": "Estados Unidos", "Uruguay": "Uruguay",
+    "Uzbekistan": "Uzbekistán",
+}
+
+
+def _team_es(name: str) -> str:
+    """Spanish name of a team, or its original form when not in the map."""
+    return _TEAMS_ES.get(name, name)
+
+
+def _readable_day(day: str) -> str:
+    """ISO date '2026-06-11' -> '11 de junio de 2026'. Falls back to the raw
+    string if the date is malformed, so the title is never empty."""
+    try:
+        y, mo, dd = (int(x) for x in day.split("-"))
+        return f"{dd} de {_MONTHS_ES[mo]} de {y}"
+    except (ValueError, IndexError, AttributeError):
+        return day
+
+
+def _readable_day_dm(day: str) -> str:
+    """ISO date '2026-06-11' -> '11 de junio' (no year). Used in titles that
+    already state the year elsewhere, to avoid repeating it."""
+    try:
+        _y, mo, dd = (int(x) for x in day.split("-"))
+        return f"{dd} de {_MONTHS_ES[mo]}"
+    except (ValueError, IndexError, AttributeError):
+        return day
+
+
+def _scoreline_es(scoreline: str) -> str:
+    """Translate both team names in a 'Home X-Y Away' scoreline to Spanish,
+    keeping the score untouched ('Mexico 2-0 South Africa' -> 'México 2-0
+    Sudáfrica'). Returns the original string if it doesn't match the shape."""
+    m = re.match(r"\s*(.+?)\s+(\d{1,2}\s*-\s*\d{1,2})\s+(.+?)\s*$", scoreline or "")
+    if not m:
+        return scoreline
+    return f"{_team_es(m.group(1).strip())} {m.group(2)} {_team_es(m.group(3).strip())}"
+
+
+def _digest_title(day: str) -> str:
+    """Generic YouTube title for the day's recap, e.g.
+    'Resumen de la jornada del 11 de junio del Mundial de Fútbol 2026'."""
+    return f"Resumen de la jornada del {_readable_day_dm(day)} del Mundial de Fútbol 2026"
 
 
 def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
@@ -157,7 +218,7 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
     style = "digest_short" if fmt.key == "reel" else "digest_long"
     seg_cap = _REEL_MAX_SEG if fmt.key == "reel" else _YT_MAX_SEG
 
-    segments, used, all_tags = [], [], []
+    segments, used, digest_matches = [], [], []
     failed_segments = []                          # scorelines that never passed
     last_i = len(finished) - 1
     for i, m in enumerate(finished):
@@ -208,7 +269,7 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         clip, dur = _segment_clip(cfg, full, narration, fmt, seg_cap, on_step)
         segments.append(clip)
         used.append({"scoreline": full.scoreline, "duration": round(dur, 1)})
-        all_tags += build_tags(full)
+        digest_matches.append(full)
 
     on_step("video", "Stitching the digest")
     digest = _stitch_with_crossfade(segments)
@@ -220,12 +281,9 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         s.close()
     digest.close()
 
-    # Dedup tags preserving order.
-    seen, tags = set(), []
-    for t in all_tags:
-        if t and t not in seen:
-            seen.add(t)
-            tags.append(t)
+    # Digest hashtags: competition first, then every country that played, then
+    # fan + generic tags. build_digest_tags dedupes for us.
+    tags = build_digest_tags(digest_matches)
 
     record = {
         "type": "digest", "day": day, "format": fmt.key,
@@ -249,10 +307,10 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         record["upload_skipped"] = "guardrail failed"
     elif cfg.AUTO_UPLOAD if upload is None else upload:
         on_step("upload", f"Uploading digest to YouTube ({cfg.YOUTUBE_PRIVACY})")
-        title = f"Resumen del día · {day}"
+        title = _digest_title(day)
         # Real text as the description — the uploader appends the hashtags
         # itself, so putting the tags here would print them twice (spam wall).
-        scorelines = "\n".join(u["scoreline"] for u in used)
+        scorelines = "\n".join(_scoreline_es(u["scoreline"]) for u in used)
         meta = {"title": title,
                 "description": f"Todos los resultados de la jornada:\n{scorelines}",
                 "tags": tags}

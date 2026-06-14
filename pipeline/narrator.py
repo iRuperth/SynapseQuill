@@ -429,8 +429,14 @@ def build_topic_tags(topic: str) -> list[str]:
 
 
 def _hashtag(text: str) -> str:
-    """Turn a name into a CamelCase hashtag: 'Real Madrid' -> '#RealMadrid'."""
-    parts = "".join(w.capitalize() for w in text.replace("-", " ").split())
+    """Turn a name into a CamelCase hashtag: 'Real Madrid' -> '#RealMadrid'.
+    Accents are stripped ('Türkiye' -> '#Turkiye', 'Curaçao' -> '#Curacao'):
+    YouTube ends a hashtag link at the first non-ASCII character, so a diacritic
+    would break the tag in half."""
+    import unicodedata
+    folded = "".join(c for c in unicodedata.normalize("NFD", text)
+                     if not unicodedata.combining(c))
+    parts = "".join(w.capitalize() for w in folded.replace("-", " ").split())
     return f"#{parts}" if parts else ""
 
 
@@ -536,8 +542,9 @@ def _top_scorer_tags(match: Match, limit: int = 3) -> list[str]:
 
 def build_tags(match: Match) -> list[str]:
     """Deterministic hashtags in priority order (only the first few show on
-    YouTube): competition, the matchup, teams, top-3 scorers, the teams'
-    fan-community tags, country, summary, stadium, then brand + generic tags.
+    YouTube): competition, each team, top-3 scorers, the teams' fan-community
+    tags, country, then summary + brand + generic tags. No combined matchup
+    mashword and no stadium tag — neither is something people search.
     Scorers go BEFORE the fan tags: a scorer's name is what fans search the
     night of the game, and anything past the visible cap never shows."""
     is_world_cup = "world cup" in (match.competition or "").lower() \
@@ -546,10 +553,11 @@ def build_tags(match: Match) -> list[str]:
     tags: list[str] = []
     # 1) Competition, proper-cased (#WorldCup2026 #FIFAWorldCup ... or #LaLiga).
     tags += _competition_tags(match.competition)
-    # 2) The matchup itself (#RealMadridBarcelona) — what fans search the night
-    #    of the game — then each team and their fan-community tags. At the World
-    #    Cup the teams ARE the countries, so don't also add the host country.
-    tags.append(_hashtag(f"{match.home} {match.away}"))
+    # 2) Each team as its OWN hashtag (#Canada #BosniaHerzegovina) plus their
+    #    fan-community tags. We deliberately do NOT emit a combined matchup tag
+    #    (#CanadaBosniaHerzegovina): a two-country mashword is unreadable and
+    #    nobody searches it. At the World Cup the teams ARE the countries, so
+    #    don't also add the host country.
     tags += [_hashtag(match.home), _hashtag(match.away)]
     # 3) Top-3 scorers (most goals first) — before the fan tags so they make
     #    the visible cut.
@@ -557,11 +565,41 @@ def build_tags(match: Match) -> list[str]:
     tags += [t for t in (_FAN_TAGS.get(match.home), _FAN_TAGS.get(match.away)) if t]
     if not is_world_cup and match.country:
         tags.append(_hashtag(match.country))
-    # 4) Summary, then stadium.
+    # 4) Summary. The stadium hashtag is deliberately omitted: a venue name is
+    #    not something people search for highlights.
     tags.append("#Resumen")
-    if match.venue:
-        tags.append(_hashtag(match.venue))
     # 5) Brand + generic reach tags last.
+    tags += _GENERIC_TAGS
+    # Dedupe preserving order, drop empties.
+    seen, out = set(), []
+    for t in tags:
+        if t and t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
+
+
+def build_digest_tags(matches: list) -> list[str]:
+    """Hashtags for a daily DIGEST: the competition tags first
+    (#WorldCup2026 #FIFAWorldCup #Mundial2026), then EVERY country that played
+    that day, each as its own hashtag (#Canada #BosniaHerzegovina #Mexico ...),
+    then the teams' fan-community tags and the generic reach tags.
+
+    No combined matchup mashwords and no per-match scorers/stadiums — a digest
+    spans several games, so a flat, readable list of competition + countries is
+    what people actually search. `matches` is a list of Match objects."""
+    tags: list[str] = []
+    # 1) Competition first — read from the first match (all share it in a digest).
+    if matches:
+        tags += _competition_tags(matches[0].competition)
+    # 2) Every country that played, in match order, home then away.
+    for m in matches:
+        tags += [_hashtag(m.home), _hashtag(m.away)]
+    # 3) Fan-community tags for those teams (extra reach for engaged audiences).
+    for m in matches:
+        tags += [t for t in (_FAN_TAGS.get(m.home), _FAN_TAGS.get(m.away)) if t]
+    # 4) Summary + generic reach tags last.
+    tags.append("#Resumen")
     tags += _GENERIC_TAGS
     # Dedupe preserving order, drop empties.
     seen, out = set(), []
