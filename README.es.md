@@ -6,7 +6,7 @@
 
 [![English](https://img.shields.io/badge/English-1a1a1a?style=for-the-badge)](README.md) **·** [![Español](https://img.shields.io/badge/Espa%C3%B1ol-1a1a1a?style=for-the-badge)](README.es.md)
 
-[![Leer en Medium](https://img.shields.io/badge/Leer%20el%20art%C3%ADculo-Medium-1a1a1a?style=for-the-badge&logo=medium&logoColor=white&labelColor=1a1a1a)](https://medium.com/@devrup404/one-content-engine-any-topic-any-brand-meet-synapsequill-6a18b5d463fd)
+[![Leer en Medium](https://img.shields.io/badge/Leer%20el%20art%C3%ADculo-Medium-1a1a1a?style=for-the-badge&logo=medium&logoColor=white&labelColor=1a1a1a)](https://medium.com/@devrup404/one-content-engine-any-topic-any-brand-meet-f88tball-8293de1bd9a4)
 
 [![Python](https://img.shields.io/badge/Python-3.12-1a1a1a?style=flat&logo=python&logoColor=white&labelColor=1a1a1a)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-backend-1a1a1a?style=flat&logo=fastapi&logoColor=white&labelColor=1a1a1a)](https://fastapi.tiangolo.com/)
