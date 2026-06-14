@@ -67,6 +67,28 @@ def _description_with_hashtags(description: str, tags: list[str]) -> str:
     return f"{description}\n\n{line}".strip()
 
 
+def _add_to_playlist(youtube, playlist_id: str, video_id: str) -> None:
+    """Append an uploaded video to a playlist. Best-effort: a failure here must
+    NOT lose the upload, so errors are swallowed with a warning. The playlist
+    must belong to the same channel as the OAuth token, otherwise YouTube
+    returns a 404 playlistNotFound error."""
+    from googleapiclient.errors import HttpError
+
+    try:
+        youtube.playlistItems().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "playlistId": playlist_id,
+                    "resourceId": {"kind": "youtube#video", "videoId": video_id},
+                }
+            },
+        ).execute()
+    except HttpError as e:
+        print(f"[publishers] could not add {video_id} to playlist "
+              f"{playlist_id}: {e}")
+
+
 def upload_youtube(cfg: BrandProfile, video_path: Path, metadata: dict) -> str:
     """Upload `video_path` and return the watch URL."""
     from googleapiclient.discovery import build
@@ -101,4 +123,9 @@ def upload_youtube(cfg: BrandProfile, video_path: Path, metadata: dict) -> str:
         _status, response = request.next_chunk()
 
     video_id = response["id"]
+
+    # Add to the profile's playlist, e.g. Reels Mundial 2026, if configured.
+    if cfg.YOUTUBE_PLAYLIST_ID:
+        _add_to_playlist(youtube, cfg.YOUTUBE_PLAYLIST_ID, video_id)
+
     return f"https://youtube.com/watch?v={video_id}"
