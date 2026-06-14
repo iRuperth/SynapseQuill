@@ -18,6 +18,7 @@
     "preset": "worldcup_2026"
   },
   "youtube": {
-    "auto_upload": false
+    "auto_upload": false,
+    "playlist_id": "PLZ8JDdWRvRYccZH3bFH5pxoWCNA27no_g"
   }
 }
