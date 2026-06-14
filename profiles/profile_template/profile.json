@@ -1,0 +1,27 @@
+{
+  "name": "My Football Channel",
+  "team": "",
+  "language": "es",
+  "llm_provider": "groq",
+  "voice": {
+    "provider": "edge",
+    "voice": "es-ES-AlvaroNeural",
+    "rate": "+8%"
+  },
+  "media": {
+    "sources": [
+      "stock",
+      "graphics",
+      "flux"
+    ],
+    "image_provider": "pollinations"
+  },
+  "style": {
+    "visual_style": "cinematic sports broadcast, vibrant, dramatic lighting"
+  },
+  "persona": {
+    "description": "Energetic, passionate football broadcaster covering the FIFA World Cup 2026.",
+    "tone": "exciting, emotional, vivid",
+    "values": "accuracy of scores and scorers above all"
+  }
+}

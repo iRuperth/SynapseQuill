@@ -1,0 +1,39 @@
+# --- Secrets ---
+.env
+profiles/*/.env
+profiles/*/tokens/
+*.pickle
+client_secret*.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.python-version
+.ruff_cache/
+.pytest_cache/
+
+# --- Generated content / vector stores ---
+profiles/*/output/
+output/
+chroma_*/
+*.mp4
+*.mp3
+*.wav
+
+# --- Docs ---
+docs/
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+frontend/node_modules/
+frontend/tsconfig.tsbuildinfo
+
+# --- OS / editor ---
+.DS_Store
+*.log
+.idea/
+.vscode/
+.cache/

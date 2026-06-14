@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd service that keeps the World Cup scheduler running in the background.
+  Install:  cp this file to ~/Library/LaunchAgents/ then `launchctl load` it
+  (see scripts/f88ball_scheduler_ctl.sh). Starts at login, restarts on crash.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.f88ball.scheduler</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/rup/Documents/DevelopmentLocal/F88tball/scripts/f88ball_scheduler.sh</string>
+    </array>
+
+    <!-- Start at login and keep it alive: relaunch if it ever exits/crashes. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Don't hammer if it crash-loops: wait 30s between restarts. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/rup/Documents/DevelopmentLocal/F88tball</string>
+
+    <!-- Logs so you can see what it's doing / any errors. -->
+    <key>StandardOutPath</key>
+    <string>/Users/rup/Documents/DevelopmentLocal/F88tball/profiles/worldcup_es/output/logs/scheduler.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/rup/Documents/DevelopmentLocal/F88tball/profiles/worldcup_es/output/logs/scheduler.err.log</string>
+</dict>
+</plist>
