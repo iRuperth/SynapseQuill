@@ -8,6 +8,8 @@ scores or scorers — that is enforced downstream by the guardrail (expert level
 Multi-language: ES / EN / FR / IT, selected by the profile language.
 """
 
+import re
+
 from core.llm import call_llm
 
 from .match_monitor import Match
@@ -16,6 +18,45 @@ from .wc_calendar import _phase_for
 _LANG_NAME = {
     "es": "Spanish", "en": "English", "fr": "French", "it": "Italian",
 }
+
+# ESPN team name -> Spanish. Covers every nation in the World Cup 2026 field; an
+# unknown name falls through to its English form so a title is never blank.
+# Shared by the single-match title and the daily digest (which imports it here).
+_TEAMS_ES = {
+    "Algeria": "Argelia", "Argentina": "Argentina", "Australia": "Australia",
+    "Austria": "Austria", "Belgium": "Bélgica",
+    "Bosnia-Herzegovina": "Bosnia-Herzegovina", "Brazil": "Brasil",
+    "Canada": "Canadá", "Cape Verde": "Cabo Verde", "Colombia": "Colombia",
+    "Congo DR": "RD del Congo", "Croatia": "Croacia", "Curaçao": "Curazao",
+    "Czechia": "Chequia", "Ecuador": "Ecuador", "Egypt": "Egipto",
+    "England": "Inglaterra", "France": "Francia", "Germany": "Alemania",
+    "Ghana": "Ghana", "Haiti": "Haití", "Iran": "Irán", "Iraq": "Irak",
+    "Ivory Coast": "Costa de Marfil", "Japan": "Japón", "Jordan": "Jordania",
+    "Mexico": "México", "Morocco": "Marruecos", "Netherlands": "Países Bajos",
+    "New Zealand": "Nueva Zelanda", "Norway": "Noruega", "Panama": "Panamá",
+    "Paraguay": "Paraguay", "Portugal": "Portugal", "Qatar": "Catar",
+    "Saudi Arabia": "Arabia Saudita", "Scotland": "Escocia",
+    "Senegal": "Senegal", "South Africa": "Sudáfrica",
+    "South Korea": "Corea del Sur", "Spain": "España", "Sweden": "Suecia",
+    "Switzerland": "Suiza", "Tunisia": "Túnez", "Türkiye": "Turquía",
+    "United States": "Estados Unidos", "Uruguay": "Uruguay",
+    "Uzbekistan": "Uzbekistán",
+}
+
+
+def _team_es(name: str) -> str:
+    """Spanish name of a team, or its original form when not in the map."""
+    return _TEAMS_ES.get(name, name)
+
+
+def _scoreline_es(scoreline: str) -> str:
+    """Translate both team names in a 'Home X-Y Away' scoreline to Spanish,
+    keeping the score untouched ('Mexico 2-0 South Africa' -> 'México 2-0
+    Sudáfrica'). Returns the original string if it doesn't match the shape."""
+    m = re.match(r"\s*(.+?)\s+(\d{1,2}\s*-\s*\d{1,2})\s+(.+?)\s*$", scoreline or "")
+    if not m:
+        return scoreline
+    return f"{_team_es(m.group(1).strip())} {m.group(2)} {_team_es(m.group(3).strip())}"
 
 
 def _goal_min(s) -> int:
@@ -641,16 +682,56 @@ def build_digest_tags(matches: list) -> list[str]:
     return out
 
 
+# Always-appended title suffix: a clickable hashtag with the most reach for a
+# Spanish-speaking audience, kept off the team-name translation below.
+_TITLE_SUFFIX = " | #Mundial2026"
+_TITLE_MAX = 90  # YouTube hard limit
+
+
+def _title_es(title: str) -> str:
+    """Force any English country name in a title to its Spanish form, so the
+    title never mixes languages no matter what the model returned."""
+    for en, es in _TEAMS_ES.items():
+        if en != es:
+            title = re.sub(rf"\b{re.escape(en)}\b", es, title)
+    return title
+
+
+def _finalise_title(raw_title: str, match: Match) -> str:
+    """Spanish team names + the #Mundial2026 suffix, within YouTube's 90 chars.
+
+    Priority when trimming: keep the hook + scoreline + suffix; the closing
+    detail (e.g. 'golazo de X') is what gets shortened away. The suffix is
+    always present and never counted out."""
+    body = _title_es((raw_title or "").strip()) or _scoreline_es(match.scoreline)
+    # Drop any suffix/hashtag the model may have added — we append our own.
+    body = re.sub(r"\s*\|?\s*#?\s*Mundial\s*2026\s*$", "", body, flags=re.I).rstrip(" |")
+    budget = _TITLE_MAX - len(_TITLE_SUFFIX)
+    if len(body) > budget:
+        body = body[:budget].rstrip(" ,–-|")
+    return body + _TITLE_SUFFIX
+
+
 def youtube_metadata(match: Match, *, language: str = "es", provider: str | None = None,
                      feedback: str = "") -> dict:
     """Generate a YouTube title + description (LLM) and deterministic tags.
+
+    The title follows the shape "<hook>, <scoreline>, <key detail>" with team
+    names always in Spanish and a fixed '| #Mundial2026' suffix added by code;
+    it never names the stadium.
 
     `feedback`: rejection reasons from a previous draft (the runner verifies
     the description against the match facts and retries with them)."""
     lang = _LANG_NAME.get(language, "Spanish")
     system = (
         f"You generate a YouTube title and description in {lang}. Respond as JSON with "
-        '"title" (<=90 chars, include the scoreline) and "description" (2-4 sentences). '
+        '"title" and "description" (2-4 sentences). '
+        "TITLE: write a punchy highlight headline in this shape: a short hook, "
+        "the scoreline, and the single most exciting detail — e.g. 'Dominio "
+        "alemán, Alemania 7-1 Curazao, golazo de Wirtz' / 'Suecia 5-1 Túnez, "
+        "doble hat-trick de Ayari' / 'Remontada épica de Brasil' / 'Empate en el "
+        "último minuto con gol de Vinícius'. Keep it under 70 characters. Do NOT "
+        "name the stadium or venue. Do NOT add hashtags or emojis. "
         "Use only the given facts: exact player names, card colours, goal types "
         "(penalty / own goal) and body parts (header vs left/right foot). JSON only."
         + (f"\nA previous draft was rejected for: {feedback}. Fix exactly that."
@@ -669,7 +750,7 @@ def youtube_metadata(match: Match, *, language: str = "es", provider: str | None
     except Exception:
         data = {}
     return {
-        "title": (data.get("title") or match.scoreline)[:90],
-        "description": data.get("description") or match.scoreline,
+        "title": _finalise_title(data.get("title", ""), match),
+        "description": data.get("description") or _scoreline_es(match.scoreline),
         "tags": build_tags(match),
     }

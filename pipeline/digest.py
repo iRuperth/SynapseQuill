@@ -12,14 +12,13 @@ Reuses narrator, team-coloured media_provider, animated_graphics and Edge-TTS.
 """
 
 import json
-import re
 import time
 from collections.abc import Callable
 
 from core.brand_config import BrandProfile
 
 from .match_monitor import Match
-from .narrator import build_digest_tags, narrate
+from .narrator import _scoreline_es, build_digest_tags, narrate
 from .video_format import get_format
 
 StepCb = Callable[[str, str], None]
@@ -116,37 +115,6 @@ def _matchday_window(source, day: str, on_step) -> list:
 _MONTHS_ES = ("", "enero", "febrero", "marzo", "abril", "mayo", "junio",
               "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
 
-# ESPN team name -> Spanish, for the digest title. Covers every nation in the
-# World Cup 2026 field; an unknown name falls through to its English form so a
-# title is never blank. Bracket placeholders ('Group A Winner') never reach a
-# digest because those fixtures are not finished.
-_TEAMS_ES = {
-    "Algeria": "Argelia", "Argentina": "Argentina", "Australia": "Australia",
-    "Austria": "Austria", "Belgium": "Bélgica",
-    "Bosnia-Herzegovina": "Bosnia-Herzegovina", "Brazil": "Brasil",
-    "Canada": "Canadá", "Cape Verde": "Cabo Verde", "Colombia": "Colombia",
-    "Congo DR": "RD del Congo", "Croatia": "Croacia", "Curaçao": "Curazao",
-    "Czechia": "Chequia", "Ecuador": "Ecuador", "Egypt": "Egipto",
-    "England": "Inglaterra", "France": "Francia", "Germany": "Alemania",
-    "Ghana": "Ghana", "Haiti": "Haití", "Iran": "Irán", "Iraq": "Irak",
-    "Ivory Coast": "Costa de Marfil", "Japan": "Japón", "Jordan": "Jordania",
-    "Mexico": "México", "Morocco": "Marruecos", "Netherlands": "Países Bajos",
-    "New Zealand": "Nueva Zelanda", "Norway": "Noruega", "Panama": "Panamá",
-    "Paraguay": "Paraguay", "Portugal": "Portugal", "Qatar": "Catar",
-    "Saudi Arabia": "Arabia Saudita", "Scotland": "Escocia",
-    "Senegal": "Senegal", "South Africa": "Sudáfrica",
-    "South Korea": "Corea del Sur", "Spain": "España", "Sweden": "Suecia",
-    "Switzerland": "Suiza", "Tunisia": "Túnez", "Türkiye": "Turquía",
-    "United States": "Estados Unidos", "Uruguay": "Uruguay",
-    "Uzbekistan": "Uzbekistán",
-}
-
-
-def _team_es(name: str) -> str:
-    """Spanish name of a team, or its original form when not in the map."""
-    return _TEAMS_ES.get(name, name)
-
-
 def _readable_day(day: str) -> str:
     """ISO date '2026-06-11' -> '11 de junio de 2026'. Falls back to the raw
     string if the date is malformed, so the title is never empty."""
@@ -165,16 +133,6 @@ def _readable_day_dm(day: str) -> str:
         return f"{dd} de {_MONTHS_ES[mo]}"
     except (ValueError, IndexError, AttributeError):
         return day
-
-
-def _scoreline_es(scoreline: str) -> str:
-    """Translate both team names in a 'Home X-Y Away' scoreline to Spanish,
-    keeping the score untouched ('Mexico 2-0 South Africa' -> 'México 2-0
-    Sudáfrica'). Returns the original string if it doesn't match the shape."""
-    m = re.match(r"\s*(.+?)\s+(\d{1,2}\s*-\s*\d{1,2})\s+(.+?)\s*$", scoreline or "")
-    if not m:
-        return scoreline
-    return f"{_team_es(m.group(1).strip())} {m.group(2)} {_team_es(m.group(3).strip())}"
 
 
 def _digest_title(day: str) -> str:
