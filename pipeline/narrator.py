@@ -535,7 +535,8 @@ def _competition_tags(competition: str) -> list[str]:
     several tags fans search for."""
     low = (competition or "").lower()
     if "world cup" in low or "mundial" in low:
-        return ["#WorldCup2026", "#FIFAWorldCup", "#Mundial2026"]
+        return ["#WorldCup2026", "#FIFAWorldCup2026", "#FIFAWorldCup",
+                "#Mundial2026"]
     if "laliga" in low or "la liga" in low:
         return ["#LaLiga"]
     if "premier" in low:
@@ -611,7 +612,7 @@ def build_tags(match: Match) -> list[str]:
 
 def build_digest_tags(matches: list) -> list[str]:
     """Hashtags for a daily DIGEST: the competition tags first
-    (#WorldCup2026 #FIFAWorldCup #Mundial2026), then EVERY country that played
+    (#WorldCup2026 #FIFAWorldCup2026 #FIFAWorldCup #Mundial2026), then EVERY country that played
     that day, each as its own hashtag (#Canada #BosniaHerzegovina #Mexico ...),
     then the teams' fan-community tags and the generic reach tags.
 
