@@ -682,9 +682,6 @@ def build_digest_tags(matches: list) -> list[str]:
     return out
 
 
-# Always-appended title suffix: a clickable hashtag with the most reach for a
-# Spanish-speaking audience, kept off the team-name translation below.
-_TITLE_SUFFIX = " | #Mundial2026"
 _TITLE_MAX = 90  # YouTube hard limit
 
 
@@ -698,18 +695,12 @@ def _title_es(title: str) -> str:
 
 
 def _finalise_title(raw_title: str, match: Match) -> str:
-    """Spanish team names + the #Mundial2026 suffix, within YouTube's 90 chars.
-
-    Priority when trimming: keep the hook + scoreline + suffix; the closing
-    detail (e.g. 'golazo de X') is what gets shortened away. The suffix is
-    always present and never counted out."""
+    """Spanish team names, no hashtag, within YouTube's 90 chars. The hashtags
+    live in the tags/description, never in the title itself."""
     body = _title_es((raw_title or "").strip()) or _scoreline_es(match.scoreline)
-    # Drop any suffix/hashtag the model may have added — we append our own.
+    # Strip any trailing hashtag the model may have added — the title carries none.
     body = re.sub(r"\s*\|?\s*#?\s*Mundial\s*2026\s*$", "", body, flags=re.I).rstrip(" |")
-    budget = _TITLE_MAX - len(_TITLE_SUFFIX)
-    if len(body) > budget:
-        body = body[:budget].rstrip(" ,–-|")
-    return body + _TITLE_SUFFIX
+    return body[:_TITLE_MAX].rstrip(" ,–-|")
 
 
 def youtube_metadata(match: Match, *, language: str = "es", provider: str | None = None,
@@ -717,8 +708,8 @@ def youtube_metadata(match: Match, *, language: str = "es", provider: str | None
     """Generate a YouTube title + description (LLM) and deterministic tags.
 
     The title follows the shape "<hook>, <scoreline>" with team names always in
-    Spanish and a fixed '| #Mundial2026' suffix added by code; it never names the
-    stadium or a goalscorer detail.
+    Spanish; it carries NO hashtag and never names the stadium or a goalscorer
+    detail. The hashtags live in the tags/description.
 
     `feedback`: rejection reasons from a previous draft (the runner verifies
     the description against the match facts and retries with them)."""
@@ -731,7 +722,7 @@ def youtube_metadata(match: Match, *, language: str = "es", provider: str | None
         "/ 'Suecia 5-1 Túnez, dominio total' / 'Remontada épica de Brasil, Brasil "
         "3-2 Argentina' / 'Empate en el último minuto, México 2-2 Estados Unidos'. "
         "Do NOT add a player or goalscorer detail at the end — stop at the "
-        "scoreline. Keep it under 70 characters. Do NOT name the stadium or venue. "
+        "scoreline. Keep it under 85 characters. Do NOT name the stadium or venue. "
         "Do NOT add hashtags or emojis. "
         "Use only the given facts: exact player names, card colours, goal types "
         "(penalty / own goal) and body parts (header vs left/right foot). JSON only."
