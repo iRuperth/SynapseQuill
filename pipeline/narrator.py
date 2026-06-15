@@ -716,9 +716,9 @@ def youtube_metadata(match: Match, *, language: str = "es", provider: str | None
                      feedback: str = "") -> dict:
     """Generate a YouTube title + description (LLM) and deterministic tags.
 
-    The title follows the shape "<hook>, <scoreline>, <key detail>" with team
-    names always in Spanish and a fixed '| #Mundial2026' suffix added by code;
-    it never names the stadium.
+    The title follows the shape "<hook>, <scoreline>" with team names always in
+    Spanish and a fixed '| #Mundial2026' suffix added by code; it never names the
+    stadium or a goalscorer detail.
 
     `feedback`: rejection reasons from a previous draft (the runner verifies
     the description against the match facts and retries with them)."""
@@ -726,12 +726,13 @@ def youtube_metadata(match: Match, *, language: str = "es", provider: str | None
     system = (
         f"You generate a YouTube title and description in {lang}. Respond as JSON with "
         '"title" and "description" (2-4 sentences). '
-        "TITLE: write a punchy highlight headline in this shape: a short hook, "
-        "the scoreline, and the single most exciting detail — e.g. 'Dominio "
-        "alemán, Alemania 7-1 Curazao, golazo de Wirtz' / 'Suecia 5-1 Túnez, "
-        "doble hat-trick de Ayari' / 'Remontada épica de Brasil' / 'Empate en el "
-        "último minuto con gol de Vinícius'. Keep it under 70 characters. Do NOT "
-        "name the stadium or venue. Do NOT add hashtags or emojis. "
+        "TITLE: write a punchy highlight headline in this shape: a short hook "
+        "followed by the scoreline — e.g. 'Dominio alemán, Alemania 7-1 Curazao' "
+        "/ 'Suecia 5-1 Túnez, dominio total' / 'Remontada épica de Brasil, Brasil "
+        "3-2 Argentina' / 'Empate en el último minuto, México 2-2 Estados Unidos'. "
+        "Do NOT add a player or goalscorer detail at the end — stop at the "
+        "scoreline. Keep it under 70 characters. Do NOT name the stadium or venue. "
+        "Do NOT add hashtags or emojis. "
         "Use only the given facts: exact player names, card colours, goal types "
         "(penalty / own goal) and body parts (header vs left/right foot). JSON only."
         + (f"\nA previous draft was rejected for: {feedback}. Fix exactly that."
