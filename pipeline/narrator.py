@@ -8,13 +8,55 @@ scores or scorers — that is enforced downstream by the guardrail (expert level
 Multi-language: ES / EN / FR / IT, selected by the profile language.
 """
 
+import re
+
 from core.llm import call_llm
 
 from .match_monitor import Match
+from .wc_calendar import _phase_for
 
 _LANG_NAME = {
     "es": "Spanish", "en": "English", "fr": "French", "it": "Italian",
 }
+
+# ESPN team name -> Spanish. Covers every nation in the World Cup 2026 field; an
+# unknown name falls through to its English form so a title is never blank.
+# Shared by the single-match title and the daily digest (which imports it here).
+_TEAMS_ES = {
+    "Algeria": "Argelia", "Argentina": "Argentina", "Australia": "Australia",
+    "Austria": "Austria", "Belgium": "Bélgica",
+    "Bosnia-Herzegovina": "Bosnia-Herzegovina", "Brazil": "Brasil",
+    "Canada": "Canadá", "Cape Verde": "Cabo Verde", "Colombia": "Colombia",
+    "Congo DR": "RD del Congo", "Croatia": "Croacia", "Curaçao": "Curazao",
+    "Czechia": "Chequia", "Ecuador": "Ecuador", "Egypt": "Egipto",
+    "England": "Inglaterra", "France": "Francia", "Germany": "Alemania",
+    "Ghana": "Ghana", "Haiti": "Haití", "Iran": "Irán", "Iraq": "Irak",
+    "Ivory Coast": "Costa de Marfil", "Japan": "Japón", "Jordan": "Jordania",
+    "Mexico": "México", "Morocco": "Marruecos", "Netherlands": "Países Bajos",
+    "New Zealand": "Nueva Zelanda", "Norway": "Noruega", "Panama": "Panamá",
+    "Paraguay": "Paraguay", "Portugal": "Portugal", "Qatar": "Catar",
+    "Saudi Arabia": "Arabia Saudita", "Scotland": "Escocia",
+    "Senegal": "Senegal", "South Africa": "Sudáfrica",
+    "South Korea": "Corea del Sur", "Spain": "España", "Sweden": "Suecia",
+    "Switzerland": "Suiza", "Tunisia": "Túnez", "Türkiye": "Turquía",
+    "United States": "Estados Unidos", "Uruguay": "Uruguay",
+    "Uzbekistan": "Uzbekistán",
+}
+
+
+def _team_es(name: str) -> str:
+    """Spanish name of a team, or its original form when not in the map."""
+    return _TEAMS_ES.get(name, name)
+
+
+def _scoreline_es(scoreline: str) -> str:
+    """Translate both team names in a 'Home X-Y Away' scoreline to Spanish,
+    keeping the score untouched ('Mexico 2-0 South Africa' -> 'México 2-0
+    Sudáfrica'). Returns the original string if it doesn't match the shape."""
+    m = re.match(r"\s*(.+?)\s+(\d{1,2}\s*-\s*\d{1,2})\s+(.+?)\s*$", scoreline or "")
+    if not m:
+        return scoreline
+    return f"{_team_es(m.group(1).strip())} {m.group(2)} {_team_es(m.group(3).strip())}"
 
 
 def _goal_min(s) -> int:
@@ -112,13 +154,28 @@ def describe_match(match: Match) -> str | None:
     return " ".join(parts)
 
 
+def _fmt_date(d: str) -> str:
+    """YYYY-MM-DD -> DD-MM-YYYY; returns the original if it doesn't match."""
+    parts = (d or "").split("-")
+    if len(parts) == 3 and len(parts[0]) == 4:
+        y, m, day = parts
+        return f"{day}-{m}-{y}"
+    return d or ""
+
+
 def _facts_block(match: Match) -> str:
     """Build a compact, unambiguous factual summary for the LLM."""
     lines = []
     if match.competition:
         lines.append(f"Competition: {match.competition}")
+        # Derive the World Cup phase from the RAW date (YYYY-MM-DD) so the
+        # narrator can name the stage without inventing it; empty for other
+        # competitions or out-of-range dates.
+        phase = _phase_for(match.date) if match.date else ""
+        if phase:
+            lines.append(f"Tournament stage: {phase}")
     if match.date:
-        lines.append(f"Date: {match.date}")
+        lines.append(f"Date: {_fmt_date(match.date)}")
     lines += [
         f"Home team: {match.home}",
         f"Away team: {match.away}",
@@ -188,15 +245,24 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
     # by inviting viewers to follow + like.
     if style == "full":
         intro_outro = (
-            "- START by presenting the match in your own words, naming BOTH teams, "
-            "like the opening of a highlights recap (e.g. 'Bienvenidos al resumen "
-            "del partidazo entre X e Y' / 'Esto fue lo que pasó en el duelo entre "
-            "X e Y'). Vary the wording, keep it short and electric.\n"
-            "- FINISH, after the epic closing line, with a short, natural call to "
-            "action inviting viewers to FOLLOW the channel and leave a LIKE for "
-            "more highlights (e.g. 'si lo viviste con nosotros, síguenos y deja tu "
-            "like para más resúmenes'). Make it sound genuine, never spammy, and "
-            "vary it every time.\n"
+            "Structure the narration in THREE flowing parts (continuous spoken "
+            "prose, NO headings or labels):\n"
+            "- INTRO: open by presenting the match in your own words, naming BOTH "
+            "teams AND the tournament stage when a 'Tournament stage' is given in "
+            "the facts (e.g. '¡Qué partidazo en la fase de grupos entre X e Y!' / "
+            "'Esto fue lo que pasó en los octavos entre X e Y'). If no stage is "
+            "given, present just the duel between the two teams. Make it a gripping "
+            "hook that sells the drama in one breath. Vary the wording, keep it "
+            "short and electric.\n"
+            "- BODY: then go through the match minute by minute (see the event "
+            "rules below).\n"
+            "- CLOSING: after narrating the last event, crown the match by STATING "
+            "THE FINAL SCORE and giving your verdict on the game (e.g. 'y termina "
+            "2 a 2, ¡qué partidazo nos regalaron ambos!'). THEN finish with a "
+            "short, natural call to action inviting viewers to FOLLOW the channel "
+            "and leave a LIKE for more highlights (e.g. 'si lo viviste con "
+            "nosotros, síguenos y deja tu like para más resúmenes'). Make it sound "
+            "genuine, never spammy, and vary it every time.\n"
         )
     else:
         # In a digest, only the first segment opens the recap and the last closes
@@ -207,11 +273,14 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         if digest_open:
             intro_outro += (
                 "- This is the FIRST match of a daily recap. OPEN the recap in your "
-                "own words, welcoming viewers to the round's highlights and NAMING "
-                "the competition (given in the facts) the way local fans say it "
-                "(e.g. 'el resumen de la jornada de La Liga', 'el resumen de la "
-                "jornada del Mundial') before narrating this match. Do NOT invent "
-                "a round number — anchor the matchday on the date if needed."
+                "own words, welcoming viewers to the highlights and NAMING the "
+                "competition (given in the facts) the way local fans say it. When a "
+                "'Tournament stage' is given in the facts, NAME THAT STAGE in the "
+                "opening (e.g. 'el resumen de la fase de grupos del Mundial', 'el "
+                "resumen de los octavos de final del Mundial', 'el resumen de los "
+                "cuartos de final'). If no stage is given, just name the competition "
+                "('el resumen de la jornada del Mundial'). Do NOT mention any date "
+                "and do NOT invent a round/matchday number."
                 f"{angle}\n")
         if digest_close:
             intro_outro += (
@@ -227,7 +296,8 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         "Narrate like a live radio announcer whose heart is about to burst — MAXIMUM passion, "
         "drama and emotion in every line:\n"
         f"{intro_outro}"
-        "- Open with a gripping hook that sells the drama of the result in one breath.\n"
+        "- Keep the energy sky-high from the first word — sell the drama in one breath "
+        "and never let the tension drop.\n"
         "- Short, explosive, breathless sentences. Build unbearable tension before each goal, "
         "then EXPLODE. Vary the rhythm: whisper the build-up, scream the goal.\n"
         "- Pour in raw emotion and vivid, visceral imagery — the roar of the crowd, nerves of "
@@ -279,8 +349,9 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         "article — say 'en el estadio de la Cerámica' or 'en La Cerámica', NEVER a bare "
         "'en la Cerámica' that reads as an adjective. Mentioning the stadium is optional; only "
         "do it if it flows.\n"
-        "- End with an EPIC, goosebumps closing line that crowns the result — the kind of "
-        "phrase fans remember.\n"
+        "- End with an EPIC, goosebumps closing that crowns the result — STATE THE "
+        "FINAL SCORE and give your verdict on the match in a phrase fans remember "
+        "(then the call to action, for a single-match reel).\n"
         "- Keep it family-friendly and brand-safe: NO profanity, swear words or vulgar "
         "expressions (e.g. never 'de cojones', 'puto', 'hostia'). The passion comes from "
         "energy, imagery and rhythm — not from coarse language.\n"
@@ -505,7 +576,8 @@ def _competition_tags(competition: str) -> list[str]:
     several tags fans search for."""
     low = (competition or "").lower()
     if "world cup" in low or "mundial" in low:
-        return ["#WorldCup2026", "#FIFAWorldCup", "#Mundial2026"]
+        return ["#WorldCup2026", "#FIFAWorldCup2026", "#FIFAWorldCup",
+                "#Mundial2026"]
     if "laliga" in low or "la liga" in low:
         return ["#LaLiga"]
     if "premier" in low:
@@ -581,7 +653,7 @@ def build_tags(match: Match) -> list[str]:
 
 def build_digest_tags(matches: list) -> list[str]:
     """Hashtags for a daily DIGEST: the competition tags first
-    (#WorldCup2026 #FIFAWorldCup #Mundial2026), then EVERY country that played
+    (#WorldCup2026 #FIFAWorldCup2026 #FIFAWorldCup #Mundial2026), then EVERY country that played
     that day, each as its own hashtag (#Canada #BosniaHerzegovina #Mexico ...),
     then the teams' fan-community tags and the generic reach tags.
 
@@ -610,16 +682,48 @@ def build_digest_tags(matches: list) -> list[str]:
     return out
 
 
+_TITLE_MAX = 90  # YouTube hard limit
+
+
+def _title_es(title: str) -> str:
+    """Force any English country name in a title to its Spanish form, so the
+    title never mixes languages no matter what the model returned."""
+    for en, es in _TEAMS_ES.items():
+        if en != es:
+            title = re.sub(rf"\b{re.escape(en)}\b", es, title)
+    return title
+
+
+def _finalise_title(raw_title: str, match: Match) -> str:
+    """Spanish team names, no hashtag, within YouTube's 90 chars. The hashtags
+    live in the tags/description, never in the title itself."""
+    body = _title_es((raw_title or "").strip()) or _scoreline_es(match.scoreline)
+    # Strip any trailing hashtag the model may have added — the title carries none.
+    body = re.sub(r"\s*\|?\s*#?\s*Mundial\s*2026\s*$", "", body, flags=re.I).rstrip(" |")
+    return body[:_TITLE_MAX].rstrip(" ,–-|")
+
+
 def youtube_metadata(match: Match, *, language: str = "es", provider: str | None = None,
                      feedback: str = "") -> dict:
     """Generate a YouTube title + description (LLM) and deterministic tags.
+
+    The title follows the shape "<hook>, <scoreline>" with team names always in
+    Spanish; it carries NO hashtag and never names the stadium or a goalscorer
+    detail. The hashtags live in the tags/description.
 
     `feedback`: rejection reasons from a previous draft (the runner verifies
     the description against the match facts and retries with them)."""
     lang = _LANG_NAME.get(language, "Spanish")
     system = (
         f"You generate a YouTube title and description in {lang}. Respond as JSON with "
-        '"title" (<=90 chars, include the scoreline) and "description" (2-4 sentences). '
+        '"title" and "description" (2-4 sentences). '
+        "TITLE: write a punchy highlight headline in this shape: a short hook "
+        "followed by the scoreline — e.g. 'Dominio alemán, Alemania 7-1 Curazao' "
+        "/ 'Suecia 5-1 Túnez, dominio total' / 'Remontada épica de Brasil, Brasil "
+        "3-2 Argentina' / 'Empate en el último minuto, México 2-2 Estados Unidos'. "
+        "Do NOT add a player or goalscorer detail at the end — stop at the "
+        "scoreline. Keep it under 85 characters. Do NOT name the stadium or venue. "
+        "Do NOT add hashtags or emojis. "
         "Use only the given facts: exact player names, card colours, goal types "
         "(penalty / own goal) and body parts (header vs left/right foot). JSON only."
         + (f"\nA previous draft was rejected for: {feedback}. Fix exactly that."
@@ -638,7 +742,7 @@ def youtube_metadata(match: Match, *, language: str = "es", provider: str | None
     except Exception:
         data = {}
     return {
-        "title": (data.get("title") or match.scoreline)[:90],
-        "description": data.get("description") or match.scoreline,
+        "title": _finalise_title(data.get("title", ""), match),
+        "description": data.get("description") or _scoreline_es(match.scoreline),
         "tags": build_tags(match),
     }
