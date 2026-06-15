@@ -232,11 +232,14 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         if digest_open:
             intro_outro += (
                 "- This is the FIRST match of a daily recap. OPEN the recap in your "
-                "own words, welcoming viewers to the round's highlights and NAMING "
-                "the competition (given in the facts) the way local fans say it "
-                "(e.g. 'el resumen de la jornada de La Liga', 'el resumen de la "
-                "jornada del Mundial') before narrating this match. Do NOT invent "
-                "a round number — anchor the matchday on the date if needed."
+                "own words, welcoming viewers to the highlights and NAMING the "
+                "competition (given in the facts) the way local fans say it. When a "
+                "'Tournament stage' is given in the facts, NAME THAT STAGE in the "
+                "opening (e.g. 'el resumen de la fase de grupos del Mundial', 'el "
+                "resumen de los octavos de final del Mundial', 'el resumen de los "
+                "cuartos de final'). If no stage is given, just name the competition "
+                "('el resumen de la jornada del Mundial'). Do NOT mention any date "
+                "and do NOT invent a round/matchday number."
                 f"{angle}\n")
         if digest_close:
             intro_outro += (
