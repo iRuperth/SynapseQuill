@@ -11,6 +11,7 @@ Multi-language: ES / EN / FR / IT, selected by the profile language.
 from core.llm import call_llm
 
 from .match_monitor import Match
+from .wc_calendar import _phase_for
 
 _LANG_NAME = {
     "es": "Spanish", "en": "English", "fr": "French", "it": "Italian",
@@ -126,6 +127,12 @@ def _facts_block(match: Match) -> str:
     lines = []
     if match.competition:
         lines.append(f"Competition: {match.competition}")
+        # Derive the World Cup phase from the RAW date (YYYY-MM-DD) so the
+        # narrator can name the stage without inventing it; empty for other
+        # competitions or out-of-range dates.
+        phase = _phase_for(match.date) if match.date else ""
+        if phase:
+            lines.append(f"Tournament stage: {phase}")
     if match.date:
         lines.append(f"Date: {_fmt_date(match.date)}")
     lines += [
