@@ -112,13 +112,22 @@ def describe_match(match: Match) -> str | None:
     return " ".join(parts)
 
 
+def _fmt_date(d: str) -> str:
+    """YYYY-MM-DD -> DD-MM-YYYY; returns the original if it doesn't match."""
+    parts = (d or "").split("-")
+    if len(parts) == 3 and len(parts[0]) == 4:
+        y, m, day = parts
+        return f"{day}-{m}-{y}"
+    return d or ""
+
+
 def _facts_block(match: Match) -> str:
     """Build a compact, unambiguous factual summary for the LLM."""
     lines = []
     if match.competition:
         lines.append(f"Competition: {match.competition}")
     if match.date:
-        lines.append(f"Date: {match.date}")
+        lines.append(f"Date: {_fmt_date(match.date)}")
     lines += [
         f"Home team: {match.home}",
         f"Away team: {match.away}",
