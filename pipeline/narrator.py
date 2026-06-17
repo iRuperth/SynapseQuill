@@ -19,6 +19,14 @@ _LANG_NAME = {
     "es": "Spanish", "en": "English", "fr": "French", "it": "Italian",
 }
 
+
+def _is_world_cup(match: Match) -> bool:
+    # True for FIFA World Cup matches. ESPN reports 'World Cup', the presets use
+    # 'Mundial'. Used to suppress the stadium name, which we never mention for
+    # the World Cup.
+    low = (match.competition or "").lower()
+    return "world cup" in low or "mundial" in low
+
 # ESPN team name -> Spanish. Covers every nation in the World Cup 2026 field; an
 # unknown name falls through to its English form so a title is never blank.
 # Shared by the single-match title and the daily digest (which imports it here).
@@ -187,7 +195,10 @@ def _facts_block(match: Match) -> str:
     if character:
         lines.append(f"Match character (use this tone, in your own words, "
                      f"respectfully): {character}")
-    if match.venue:
+    # The venue is given to the narrator for every competition EXCEPT the World
+    # Cup, where the stadium is never named. Withholding it from the facts is the
+    # robust guard: the model cannot mention a stadium it was never told.
+    if match.venue and not _is_world_cup(match):
         lines.append(f"Venue: {match.venue}")
     # Build ONE chronological list of every event (goals AND cards together),
     # so the narration can run through the match minute by minute.
@@ -240,6 +251,21 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
     """
     lang = _LANG_NAME.get(language, "Spanish")
     length = _LENGTH.get(style, _LENGTH["full"])
+
+    # Stadium rule. The World Cup never names the venue; the facts block already
+    # withholds it, and this also forbids inventing one. Every other competition
+    # keeps the optional, natural mention.
+    if _is_world_cup(match):
+        stadium_rule = (
+            "- NEVER name or hint at the stadium, venue, arena or city where the "
+            "match was played. Do not invent one. The location is irrelevant to "
+            "the story — focus on the football.\n")
+    else:
+        stadium_rule = (
+            "- When you name the stadium, refer to it naturally as 'el estadio "
+            "<name>' or keep its article — say 'en el estadio de la Cerámica' or "
+            "'en La Cerámica', NEVER a bare 'en la Cerámica' that reads as an "
+            "adjective. Mentioning the stadium is optional; only do it if it flows.\n")
 
     # A single-match reel (style "full") opens by presenting the match and closes
     # by inviting viewers to follow + like.
@@ -345,10 +371,7 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         "- Refer to the minute in MASCULINE: 'al minuto 51', 'al 51', 'en el 51', "
         "'hacia el 30' are all fine. NEVER feminine — never 'a la 51', 'en la 51' "
         "(the minute is masculine: 'el minuto').\n"
-        "- When you name the stadium, refer to it naturally as 'el estadio <name>' or keep its "
-        "article — say 'en el estadio de la Cerámica' or 'en La Cerámica', NEVER a bare "
-        "'en la Cerámica' that reads as an adjective. Mentioning the stadium is optional; only "
-        "do it if it flows.\n"
+        f"{stadium_rule}"
         "- End with an EPIC, goosebumps closing that crowns the result — STATE THE "
         "FINAL SCORE and give your verdict on the match in a phrase fans remember "
         "(then the call to action, for a single-match reel).\n"
@@ -619,8 +642,7 @@ def build_tags(match: Match) -> list[str]:
     mashword and no stadium tag — neither is something people search.
     Scorers go BEFORE the fan tags: a scorer's name is what fans search the
     night of the game, and anything past the visible cap never shows."""
-    is_world_cup = "world cup" in (match.competition or "").lower() \
-        or "mundial" in (match.competition or "").lower()
+    is_world_cup = _is_world_cup(match)
 
     tags: list[str] = []
     # 1) Competition, proper-cased (#WorldCup2026 #FIFAWorldCup ... or #LaLiga).
