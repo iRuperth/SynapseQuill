@@ -201,8 +201,9 @@ def crowd_prompt(team: str, visual_style: str, vertical: bool = True) -> str:
     return (
         f"{visual_style}, photorealistic {_CLOSEUP}, {fans} at night "
         f"waving MANY large {palette(team)}, raised scarves and big plain "
-        f"solid-colour flags filling the frame, flares and confetti, vibrant "
-        f"colours, {comp}, {_NO_TEXT}"
+        f"solid-colour flags filling the frame, colourful confetti and "
+        f"streamers, no smoke, no flares, no fire, vibrant colours, {comp}, "
+        f"{_NO_TEXT}"
     )
 
 
@@ -213,8 +214,9 @@ def generic_crowd_prompt(visual_style: str, vertical: bool = True) -> str:
     return (
         f"{visual_style}, photorealistic {_CLOSEUP}, ecstatic fans at night "
         f"waving many large solid-colour flags and raised scarves in MIXED team "
-        f"colours, supporters in shirts of several different teams, flares and "
-        f"confetti, vibrant colours, {comp}, {_NO_TEXT}"
+        f"colours, supporters in shirts of several different teams, colourful "
+        f"confetti and streamers, no smoke, no flares, no fire, vibrant "
+        f"colours, {comp}, {_NO_TEXT}"
     )
 
 
