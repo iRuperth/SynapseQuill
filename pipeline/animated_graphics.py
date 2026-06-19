@@ -149,16 +149,33 @@ def _canvas() -> Image.Image:
 
 
 def _font(size: int, bold: bool = True):
-    candidates = [
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf" if bold
-        else "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    ]
+    # Try the platform fonts in order and STOP at the first that loads. macOS has
+    # Arial/Helvetica; the Linux container (Docker) ships fonts-dejavu-core, so
+    # DejaVu MUST be listed for BOTH weights — a regular-weight fallback was
+    # missing, so on Linux _font(bold=False) fell through to load_default(), a
+    # tiny bitmap font that renders '-', accents and most glyphs as a .notdef
+    # box: that is the little square that showed up next to the score.
+    if bold:
+        candidates = [
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+    else:
+        candidates = [
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        ]
     for p in candidates:
         if os.path.exists(p):
             return ImageFont.truetype(p, size)
-    return ImageFont.load_default()
+    # Last resort: PIL's built-in default AT THE REQUESTED SIZE. Pillow >=10.1
+    # returns a real scalable TrueType here (not the old fixed 11px bitmap that
+    # boxed out '-', accents and most glyphs), so the score never shows a square.
+    return ImageFont.load_default(size)
 
 
 # ESPN prefixes league names with the country ("Spanish LALIGA", "English
@@ -461,13 +478,16 @@ def _unified_frame(match: Match, _language: str, p: float, *,
     big = _font(score_px)
     row_cy = top_pad + score_px // 2          # vertical center of the score row
 
-    # Lay the row out around the frame center: [crest][hg] - [ag][crest].
+    # Lay the row out around the frame center: [crest][hg] – [ag][crest].
+    # The separator is DRAWN as a small bar, not a '-' glyph: a text dash fell
+    # back to a .notdef box on environments whose font lacked the glyph (the
+    # little square that showed up between the two scores). A rectangle needs no
+    # font at all, so it can never box out.
     gap = _sx(0.04)
     hg_s, ag_s = str(hg), str(ag)
     hg_w = d.textbbox((0, 0), hg_s, font=big)[2]
     ag_w = d.textbbox((0, 0), ag_s, font=big)[2]
-    dash_font = _font(int(score_px * 0.7))
-    dash_w = d.textbbox((0, 0), "-", font=dash_font)[2]
+    dash_w = int(score_px * 0.34)                 # width of the drawn separator bar
     crest_w = (home_crest.width if home_crest else 0)
     crest_w2 = (away_crest.width if away_crest else 0)
     total_w = crest_w + gap + hg_w + gap + dash_w + gap + ag_w + gap + crest_w2
@@ -478,25 +498,37 @@ def _unified_frame(match: Match, _language: str, p: float, *,
     x += crest_w + gap
     d.text((x, int(row_cy - score_px / 2)), hg_s, font=big, fill=home_color)
     x += hg_w + gap
-    d.text((x, int(row_cy - score_px * 0.35)), "-", font=dash_font, fill=_WHITE)
+    # The dash: a short horizontal bar centred on the score row, no glyph.
+    dash_h = max(3, int(score_px * 0.09))
+    dash_y = int(row_cy - dash_h / 2)
+    d.rounded_rectangle([x, dash_y, x + dash_w, dash_y + dash_h],
+                        radius=dash_h // 2, fill=_WHITE)
     x += dash_w + gap
     d.text((x, int(row_cy - score_px / 2)), ag_s, font=big, fill=away_color)
     x += ag_w + gap
     if away_crest:
         img.alpha_composite(away_crest, (x, int(row_cy - away_crest.height / 2)))
 
-    # Team names below the score row; the winner's name is gold too.
+    # Team names below the score row; the winner's name is gold too. The
+    # separator between them is a DRAWN bar (not a '-' glyph), for the same
+    # reason as the score dash above: a text dash boxed out where the font
+    # lacked the glyph.
     names_y_px = row_cy + score_px // 2 + _sy(0.03)
     name_font = _font(_fs(0.030))
+    name_h = d.textbbox((0, 0), "Mg", font=name_font)[3]
     home_n, away_n = match.home.upper(), match.away.upper()
-    sep = "  -  "
+    nsep_w = _sx(0.035)                            # gap reserved for the bar
     hn_w = d.textbbox((0, 0), home_n, font=name_font)[2]
-    sep_w = d.textbbox((0, 0), sep, font=name_font)[2]
     an_w = d.textbbox((0, 0), away_n, font=name_font)[2]
-    nx = (W - (hn_w + sep_w + an_w)) // 2
+    nx = (W - (hn_w + nsep_w + an_w)) // 2
     d.text((nx, names_y_px), home_n, font=name_font, fill=home_color)
-    d.text((nx + hn_w, names_y_px), sep, font=name_font, fill=_WHITE)
-    d.text((nx + hn_w + sep_w, names_y_px), away_n, font=name_font, fill=away_color)
+    nbar_w = int(nsep_w * 0.45)
+    nbar_h = max(2, int(name_h * 0.10))
+    nbar_x = nx + hn_w + (nsep_w - nbar_w) // 2
+    nbar_y = names_y_px + name_h // 2 - nbar_h // 2
+    d.rounded_rectangle([nbar_x, nbar_y, nbar_x + nbar_w, nbar_y + nbar_h],
+                        radius=nbar_h // 2, fill=_WHITE)
+    d.text((nx + hn_w + nsep_w, names_y_px), away_n, font=name_font, fill=away_color)
 
     bar_y_px = names_y_px + _sy(0.05)
     bar_w = int(W * 0.55)
