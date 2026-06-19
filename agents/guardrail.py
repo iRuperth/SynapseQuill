@@ -127,8 +127,26 @@ _BODY_WORDS = {
 _PEN_WORDS = re.compile(r"\bpenalti|\bpenalty|(?<!area )\bpenal\b|"
                         r"pena maxima|once metros|desde el punto",
                         re.IGNORECASE)
-_OWN_WORDS = re.compile(r"autogol|propia (?:puerta|meta|porteria)|"
-                        r"en propia\b|own goal", re.IGNORECASE)
+# "propio gol" also describes an own goal — the narrator uses it freely, so it
+# must count or a genuine own-goal narration trips the guardrail. CAREFUL: a
+# bare "en su propia area/zona" is just a PLACE (a clearance happens there too),
+# so it is deliberately NOT matched — only own-goal-specific forms are, to avoid
+# the inverse false-positive ("mentions an own goal" where there was none).
+_OWN_WORDS = re.compile(r"autogol|propi[oa] (?:puerta|meta|porteria)|"
+                        r"\bel propio gol\b|en propia\b|en propias? mallas|"
+                        r"own goal|gol en contra", re.IGNORECASE)
+
+# A penalty mention that is NEGATED — the VAR/referee waved it away. "VAR
+# Decision: No Penalty" is a real moment, so the narrator rightly says "no penal"
+# / "sin penal" / "no fue penal" / "sin encontrar penal"; that must NOT count as
+# an invented penalty goal. Runs on ACCENT-FOLDED text, so no accents here.
+# Covers the negator-BEFORE-penal forms ESPN's "No Penalty" note produces (a few
+# words may sit between: "no hubo penal", "no señala penal", "sin encontrar
+# penal"). A trailing negation ("penal, pero el árbitro dice que no") is rarer
+# and left to the LLM-judge layer, to avoid masking a real penalty goal that
+# happens to be followed by an unrelated "no".
+_NEGATED_PEN = re.compile(
+    r"\b(?:no|sin)\b(?:\s+\w+){0,3}?\s+penal(?:ti|ty)?\b", re.IGNORECASE)
 
 
 def _goal_kind(description: str) -> str | None:
@@ -196,7 +214,12 @@ def _goal_type_issues(match: Match, text: str) -> list[str]:
     has_pen = any("Pen" in (g.kind or "") for g in match.goals)
     has_own = any("Own" in (g.kind or "") for g in match.goals)
     shootout = match.home_pens is not None or match.away_pens is not None
-    if not has_pen and not shootout and _PEN_WORDS.search(folded):
+    # A NEGATED penalty ("el VAR revisa sin encontrar penal", "no fue penal", "no
+    # señala penal") is a real moment ESPN reports ("VAR Decision: No Penalty"),
+    # NOT an invented penalty goal. Blank those mentions before the invention
+    # check so a faithfully-narrated no-penalty VAR call doesn't false-fail.
+    pen_check = _NEGATED_PEN.sub(" ", folded)
+    if not has_pen and not shootout and _PEN_WORDS.search(pen_check):
         issues.append("the text mentions a penalty but no goal was a penalty")
     if not has_own and _OWN_WORDS.search(folded):
         issues.append("the text mentions an own goal but none was scored")
