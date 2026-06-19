@@ -300,7 +300,10 @@ def players_left_count(match: Match) -> int | None:
 
 def _stats_summary(match: Match) -> str:
     """One-line 'Team: 53% poss, 11 shots (5 on), 6 corners, 12 fouls' per side
-    from the ESPN boxscore, or '' when no stats were captured."""
+    from the ESPN boxscore, or '' when no stats were captured. All four numbers
+    are real data the narrator may weave into the BODY where they fit; the
+    closing recap, however, recites only possession and shots (see the CLOSING
+    rule), so corners/fouls stay out of that final summary."""
     if not match.stats:
         return ""
     parts = []
@@ -325,7 +328,8 @@ def _stats_summary(match: Match) -> str:
 
 # Word-length guidance per narration style.
 _LENGTH = {
-    "full": "110-170 words, including the opening presentation and the closing "
+    "full": "110-180 words, including the opening presentation, the short "
+            "possession-and-shots recap after the final score, and the closing "
             "call to action.",
     "digest_short": "VERY SHORT: 30-45 words MAXIMUM — this is one match in a fast daily "
                     "digest. One punchy line on the result and the key goal(s). Do not list "
@@ -429,11 +433,21 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
             "rules below).\n"
             "- CLOSING: after narrating the last event, crown the match by STATING "
             "THE FINAL SCORE and giving your verdict on the game (e.g. 'y termina "
-            "2 a 2, ¡qué partidazo nos regalaron ambos!'). THEN finish with a "
-            "short, natural call to action inviting viewers to FOLLOW the channel "
-            "and leave a LIKE for more highlights (e.g. 'si lo viviste con "
-            "nosotros, síguenos y deja tu like para más resúmenes'). Make it sound "
-            "genuine, never spammy, and vary it every time.\n"
+            "2 a 2, ¡qué partidazo nos regalaron ambos!'). THEN, when 'Team "
+            "statistics' are given in the facts, add a SHORT spoken recap of the "
+            "key numbers — the BALL POSSESSION of both sides and how many SHOTS "
+            "each took — woven into one natural sentence, never a bare list and "
+            "never reading the stats as a table (e.g. 'y los números lo confirman: "
+            "X dominó con un sesenta por ciento de la posesión y disparó doce "
+            "veces, por las siete de Y'). In THIS final recap mention ONLY "
+            "possession and shots — do NOT recite the corner count here (corners "
+            "are still fine earlier in the body, e.g. as how a goal started). If "
+            "no stats are given, skip this and go "
+            "straight to the call to action. FINALLY finish with a short, natural "
+            "call to action inviting viewers to FOLLOW the channel and leave a "
+            "LIKE for more highlights (e.g. 'si lo viviste con nosotros, síguenos "
+            "y deja tu like para más resúmenes'). Make it sound genuine, never "
+            "spammy, and vary it every time.\n"
         )
     else:
         # In a digest, only the first segment opens the recap and the last closes
