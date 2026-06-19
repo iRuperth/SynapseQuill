@@ -99,8 +99,10 @@ def run_match(profile_id: str, match: Match, *,
     # editor somehow altered a name/score/minute, fall back to the unpolished
     # (already fact-checked) narration.
     on_step("polish", "Reviewing narration so it sounds natural")
+    from .narrator import players_left_count
     from .text_polish import polish
-    polished = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
+    polished = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER,
+                      players_left=players_left_count(match))
     if polished != narration:
         check = verify(match, polished, cfg.LANGUAGE,
                        judge_provider=cfg.JUDGE_PROVIDER, use_judge=False)

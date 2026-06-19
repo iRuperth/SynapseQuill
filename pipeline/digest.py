@@ -219,8 +219,10 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
                                  "after 3 attempts — baked in; review before publishing")
         # Make each segment sound human (e.g. "la penalty" -> "el penalty"),
         # then re-check the facts: a polish that broke one is discarded.
+        from .narrator import players_left_count
         from .text_polish import polish
-        polished = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
+        polished = polish(narration, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER,
+                          players_left=players_left_count(full))
         if polished != narration and verify(full, polished, cfg.LANGUAGE,
                                             use_judge=False)["passed"]:
             narration = polished

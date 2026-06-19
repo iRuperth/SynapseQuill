@@ -50,10 +50,117 @@ def _apply(pattern: str, repl: str, text: str) -> str:
     return re.sub(pattern, _sub, text, flags=re.IGNORECASE)
 
 
-def fix_common(text: str) -> str:
-    """Apply the deterministic Spanish/football corrections."""
+# A card narrated TWICE in one breath ("le dan la tarjeta y el árbitro le muestra
+# la tarjeta") is the redundancy the prompt keeps slipping on. This collapses the
+# DOUBLED mention to the first clause. Deliberately tight — the two card verbs
+# must be adjacent (only a connector / optional "el árbitro" between them), so a
+# second player's later card ("...y al 22 López ve la amarilla") is NOT touched.
+_CARD_VERB = (r"(?:le (?:dan|muestran|enseñan|sacan|enseña|saca|muestra|da)|"
+              r"ve|recibe|se (?:gana|lleva)|es amonestad[oa]|"
+              r"el árbitro le (?:muestra|saca|enseña))")
+_CARD_NOUN = (r"(?:la |una |su |)(?:tarjeta(?: amarilla| roja)?|"
+              r"cartulina(?: amarilla| roja)?|amarilla|roja)")
+# "es amonestado" already MEANS he was booked, so it needs no card noun to count
+# as a mention. Allow the first clause to be either "<verb> <card-noun>" or a
+# bare "es amonestado".
+_CARD_MENTION = rf"(?:{_CARD_VERB}\s+{_CARD_NOUN}|es amonestad[oa])"
+_CARD_REDUNDANCY = re.compile(
+    rf"({_CARD_MENTION})"                                   # 1st mention — kept
+    rf"(?:\s*(?:,\s*y|y|,)\s+(?:el árbitro\s+)?(?:le\s+)?"  # connector (+ árbitro)
+    rf"{_CARD_MENTION})",                                   # 2nd mention — dropped
+    re.IGNORECASE)
+
+
+# LONG dashes — en dash (–), em dash (—), horizontal bar (―), minus (−) and the
+# figure/hyphen variants — render as an oversized bar (or a .notdef box) in the
+# burned-in caption and read oddly aloud. A PLAIN hyphen "-" is fine and stays.
+# So fold every long/typographic dash to a plain hyphen everywhere (score "2–1"
+# becomes "2-1", an em-dash aside "X — Y" becomes "X - Y").
+_LONG_DASH = re.compile(r"[‐‑‒–—―−]")
+
+
+def _normalise_dashes(text: str) -> str:
+    """Replace every long/typographic dash with a plain hyphen; keep '-' as is."""
+    return _LONG_DASH.sub("-", text)
+
+
+def _dedupe_card_mention(text: str) -> str:
+    """Collapse a card stated twice for the same booking to a single mention.
+    Runs repeatedly in case three verbs were chained ('ve la amarilla, es
+    amonestado y le muestran la tarjeta')."""
+    prev = None
+    while prev != text:
+        prev = text
+        text = _CARD_REDUNDANCY.sub(r"\1", text)
+    return text
+
+
+# Markdown / formatting characters the model sometimes leaks into the SPOKEN
+# script despite being told not to (a '*Canadá 6*' emphasis, a '* ' bullet, a
+# '#' heading, a '`' or '_'). The voice would read them aloud or they'd show in
+# the caption, so strip them. Hyphens, accents and '¡¿!?' are NOT touched.
+_MARKUP = re.compile(r"[*#`_~]+")
+# A short parenthetical — "(Girona)", "(de penalti)" — must NOT show in the
+# caption (the prompt forbids 'Nombre (Equipo)'; this is the safety net). Drop
+# the brackets AND their short content; a long parenthetical keeps its words but
+# loses the brackets, so no sentence is gutted.
+_SHORT_PAREN = re.compile(r"\s*\(([^)]{1,30})\)")
+
+
+def _strip_markup(text: str) -> str:
+    """Remove stray markdown symbols and parentheses from the spoken script
+    (e.g. '*Canadá 6*' -> 'Canadá 6', 'Martínez (Girona)' -> 'Martínez'). Leading
+    list bullets ('* ', '- ') at a line start go too."""
+    text = re.sub(r"(?m)^\s*[*\-•]\s+", "", text)   # bullet at start of a line
+    text = _MARKUP.sub("", text)                     # any inline * # ` _ ~
+    text = _SHORT_PAREN.sub("", text)                # short '(...)' aside, brackets+content
+    text = text.replace("(", "").replace(")", "")    # any remaining stray bracket
+    return text
+
+
+# Spanish number words 7–11 so a "con DIEZ hombres" miscount is corrected too,
+# not just the digit form "con 10 hombres".
+_NUM_WORD = {7: "siete", 8: "ocho", 9: "nueve", 10: "diez", 11: "once"}
+_WORD_NUM = {v: k for k, v in _NUM_WORD.items()}
+# "con 10 hombres", "con diez jugadores", "con uno menos" — a phrase that states
+# how many players a side has left after a sending-off. The model keeps doing the
+# subtraction itself and getting it wrong (two reds -> it says 8, not 9), so we
+# overwrite the number with the real count. The count is passed in (computed from
+# the match's red cards); 'con uno/dos menos' is left alone (it is relative, not
+# a total, so it cannot be miscounted the same way).
+_PLAYERS_LEFT = re.compile(
+    r"\bcon\s+(\d{1,2}|siete|ocho|nueve|diez|once)\s+(hombres|jugadores)\b",
+    re.IGNORECASE)
+
+
+def _fix_players_left(text: str, correct: int | None) -> str:
+    """Force any 'con N hombres/jugadores' to the real post-red-card count."""
+    if not correct:
+        return text
+    word = _NUM_WORD.get(correct, str(correct))
+
+    def _sub(m: re.Match) -> str:
+        stated = m.group(1).lower()
+        n = int(stated) if stated.isdigit() else _WORD_NUM.get(stated)
+        # Only rewrite a plausible reduced-team total (7–10); leave anything else
+        # (e.g. "con 11 jugadores", or an unrelated number) untouched.
+        if n in (7, 8, 9, 10) and n != correct:
+            return f"con {word} {m.group(2)}"
+        return m.group(0)
+
+    return _PLAYERS_LEFT.sub(_sub, text)
+
+
+def fix_common(text: str, *, players_left: int | None = None) -> str:
+    """Apply the deterministic Spanish/football corrections. `players_left`, when
+    given, is the real number of men a side has after red cards — used to correct
+    a miscounted 'con N hombres'."""
+    text = _normalise_dashes(text)
+    text = _strip_markup(text)
     for pattern, repl in _RULES:
         text = _apply(pattern, repl, text)
+    text = _dedupe_card_mention(text)
+    text = _fix_players_left(text, players_left)
     return text
 
 
@@ -106,9 +213,14 @@ def polish_llm(text: str, *, language: str = "es", provider: str | None = None) 
 
 
 def polish(text: str, *, language: str = "es", provider: str | None = None,
-           use_llm: bool = True) -> str:
-    """Full polish: deterministic fixes first, then the optional LLM editor."""
-    text = fix_common(text)
+           use_llm: bool = True, players_left: int | None = None) -> str:
+    """Full polish: deterministic fixes first, then the optional LLM editor.
+
+    `players_left`: the real number of men a side has after red cards. Passed
+    through so a miscounted 'con N hombres' is corrected — including AFTER the
+    LLM editor, which can reintroduce the slip."""
+    text = fix_common(text, players_left=players_left)
     if use_llm:
-        text = fix_common(polish_llm(text, language=language, provider=provider))
+        text = fix_common(polish_llm(text, language=language, provider=provider),
+                          players_left=players_left)
     return text
