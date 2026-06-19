@@ -22,6 +22,29 @@ from .narrator import narrate, youtube_metadata
 StepCb = Callable[[str, str], None]      # (step_key, human_message)
 CancelCb = Callable[[], bool]
 
+# Hard ceiling for a single-match reel: the voiceover (and therefore the video,
+# whose length is driven entirely by the audio) must stay UNDER 2:59 so the clip
+# clears the 3-minute Shorts limit with a safety margin. 179s = 2:59.
+_REEL_MAX_AUDIO_SECS = 179.0
+# The duration guardrail only kicks in when the voiceover is OVER 2:59 — a
+# normal-length reel is never touched. When it does fire it keeps regenerating a
+# tighter script until it fits; it never gives up and skips the video. The cap
+# is a high safety backstop (so a misbehaving TTS can't hang the run forever),
+# not an "attempts before giving up" — in practice it fits in 1-3 rounds.
+_DURATION_MAX_ATTEMPTS = 12
+_DURATION_MIN_WORDS = 70                  # word-target floor for the squeeze prompt
+
+
+def _audio_seconds(audio_path) -> float:
+    """Duration of an audio file in seconds, measured the same way the assembler
+    reads it (MoviePy), so the number we gate on matches the final video."""
+    from moviepy import AudioFileClip
+    clip = AudioFileClip(str(audio_path))
+    try:
+        return float(clip.duration)
+    finally:
+        clip.close()
+
 
 def _noop_step(step: str, msg: str) -> None:
     print(f"[pipeline] {step}: {msg}")
@@ -149,6 +172,82 @@ def run_match(profile_id: str, match: Match, *,
             on_step("voice", "Synthesising narration voice + subtitles")
             from .voice_generator import synthesize
             audio_path, subtitles = synthesize(cfg, narration)
+
+            # --- 2b. Guardrail: keep the reel UNDER 2:59 ------------------
+            # The video length is the audio length (the assembler stretches the
+            # graphics to fit the voice), so an over-long narration = an
+            # over-long Short. The reel MUST clear 2:59, and it MUST still ship —
+            # we never bail out and skip the video. So we regenerate a tighter
+            # script and retry until it fits, ESCALATING how much we cut each
+            # round so it always converges, even on a 9-9 with 18 goals:
+            #   • first we drop filler connectors and the possession/stats recap;
+            #   • if that is not enough we condense each goal — no assist, no
+            #     build-up, just scorer + minute — and keep shrinking the word
+            #     target round after round.
+            # Every tighter draft is re-verified against the facts (deterministic
+            # layer only — cheap); a draft that broke a fact is discarded and we
+            # squeeze again, so trimming can never smuggle in an error. The loop
+            # is bounded by a high safety cap only to avoid hanging forever if the
+            # TTS misbehaves — in practice it fits long before then.
+            secs = _audio_seconds(audio_path)
+            if secs > _REEL_MAX_AUDIO_SECS and fmt.key == "reel":
+                on_step("duration", f"Voiceover is {secs:.0f}s — trimming to fit "
+                                    f"under 2:59")
+            attempt = 0
+            while secs > _REEL_MAX_AUDIO_SECS and fmt.key == "reel" \
+                    and attempt < _DURATION_MAX_ATTEMPTS:
+                attempt += 1
+                # Word target ratchets down every round with a hard floor, so the
+                # script keeps getting shorter no matter how many goals there are.
+                target = max(_DURATION_MIN_WORDS, 150 - attempt * 20)
+                squeeze = (
+                    "\n\nThe spoken version of a previous draft ran LONGER than "
+                    "2 minutes 59 seconds, which is too long — it MUST come in "
+                    "UNDER 2:59. Rewrite it SHORTER. Keep the final score and "
+                    "every scorer, but make it more concise:\n"
+                    "- Cut ALL filler connectors and crowd-reaction asides "
+                    "('acto seguido', 'mientras tanto', 'para colmo', 'qué "
+                    "partidazo nos regalaron', 'lo que nadie esperaba').\n"
+                    "- Do NOT mention ball possession, shots or any other team "
+                    "statistics — drop that recap entirely.\n")
+                if attempt >= 2:
+                    # Still too long after stripping filler/stats: the goals
+                    # themselves are the bulk now, so condense how each is told.
+                    squeeze += (
+                        "- Describe each goal in the FEWEST words: just the "
+                        "scorer and the minute. Do NOT narrate the assist, the "
+                        "build-up, the type of finish or who set it up. When one "
+                        "player scored more than once, say it in one phrase "
+                        "(e.g. 'X firmó un triplete') instead of narrating each "
+                        "goal separately.\n")
+                squeeze += (
+                    f"- Aim for about {target} words total. Tighten the intro and "
+                    "the closing to one short line each.")
+                on_step("duration", f"Voiceover {secs:.0f}s — regenerating tighter "
+                                   f"(attempt {attempt}, target ~{target} words)")
+                shorter = narrate(match, language=cfg.LANGUAGE,
+                                  system_preamble=cfg.system_preamble + squeeze,
+                                  provider=cfg.LLM_PROVIDER)
+                # A tighter draft must still be factual — deterministic check
+                # only (cheap, no judge); if it broke a fact, keep the current
+                # (already-verified) narration and squeeze again next round.
+                check = verify(match, shorter, cfg.LANGUAGE,
+                               judge_provider=cfg.JUDGE_PROVIDER, use_judge=False)
+                if not check["passed"]:
+                    on_step("duration", "Tighter draft dropped a fact — retrying")
+                    continue
+                narration = shorter
+                result["narration"] = narration
+                audio_path, subtitles = synthesize(cfg, narration)
+                secs = _audio_seconds(audio_path)
+            result["audio_seconds"] = round(secs, 1)
+            if fmt.key == "reel" and secs > _REEL_MAX_AUDIO_SECS:
+                # Should be unreachable in practice; logged so it never passes
+                # silently. The video still ships.
+                on_step("duration", f"WARNING: voiceover still {secs:.0f}s after "
+                                   f"{attempt} attempts — shipping anyway")
+            elif fmt.key == "reel":
+                on_step("duration", f"Voiceover fits at {secs:.0f}s (under 2:59)")
 
             on_step("video", "Assembling .mp4")
             from .video_assembler import assemble
