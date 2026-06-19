@@ -201,18 +201,35 @@ def _facts_block(match: Match) -> str:
     if match.venue and not _is_world_cup(match):
         lines.append(f"Venue: {match.venue}")
     # Build ONE chronological list of every event (goals AND cards together),
-    # so the narration can run through the match minute by minute.
+    # so the narration can run through the match minute by minute. The goal's
+    # ESPN description ('header from the centre of the box... Assisted by X')
+    # and the card's reason ('a bad foul') are FACTS — surfaced here so the
+    # narrator can be specific without inventing anything.
     events = []
     for g in match.goals:
         kind = "penalty goal" if "Pen" in g.kind else (
             "own goal" if "Own" in g.kind else "goal")
         line = f"minute {g.minute}: {kind} for {g.team}, scored by {g.player}"
         if g.description:
-            line += f" — {g.description}"
+            line += f" — how it happened (a FACT, narrate the finish and any " \
+                    f"assist exactly as stated): {g.description}"
         events.append((_goal_min(g.minute), line))
-    for c in match.cards:
-        events.append((_goal_min(c.minute),
-                       f"minute {c.minute}: {c.color} card for {c.player} of {c.team}"))
+    # Track yellows already seen per player so a later RED for the same player is
+    # flagged as a SECOND-YELLOW sending-off (ESPN emits a second booking as a
+    # Red event). This is what lets the narrator say "doble amarilla, expulsado"
+    # instead of an ambiguous "segunda amarilla" that could mean the match's 2nd
+    # booking to a still-on-the-pitch player.
+    seen_yellow: set[str] = set()
+    for c in sorted(match.cards, key=lambda x: _goal_min(x.minute)):
+        line = f"minute {c.minute}: {c.color} card for {c.player} of {c.team}"
+        if c.color == "Red" and c.player in seen_yellow:
+            line += (" — this RED is the player's SECOND yellow of the match, so "
+                     "he is SENT OFF (double booking). Narrate it as an expulsion.")
+        if c.reason:
+            line += f" — reason (a FACT from the data, you MAY state it): {c.reason}"
+        if c.color == "Yellow":
+            seen_yellow.add(c.player)
+        events.append((_goal_min(c.minute), line))
 
     if events:
         events.sort(key=lambda e: e[0])
@@ -221,7 +238,89 @@ def _facts_block(match: Match) -> str:
             lines.append(f"  - {line}")
     else:
         lines.append("No goals or cards (0-0).")
+
+    # Players remaining after red cards — stated as a FACT so the narrator never
+    # has to do the arithmetic itself (it was saying "10 hombres" after TWO
+    # sending-offs, which is 9). ESPN emits a second yellow AS a 'Red' event, so
+    # counting reds per side gives the right number with no double-count.
+    sendoff_line = _sendoff_summary(match)
+    if sendoff_line:
+        lines.append(f"Players left after red cards (a FACT — state the correct "
+                     f"number, never miscount): {sendoff_line}")
+
+    # Optional factual extras (ESPN enrichment). Both are real data; the
+    # narrator weaves them in only where they fit and never invents them.
+    stats_line = _stats_summary(match)
+    if stats_line:
+        lines.append(f"Team statistics (FACTS — use to colour the match's "
+                     f"character, do not invent any number): {stats_line}")
+    if match.notes:
+        lines.append("Notable moments from the play-by-play (FACTS — narrate any "
+                     "that add drama, e.g. a VAR call or a shot off the post; "
+                     "never invent one):")
+        for n in match.notes:
+            lines.append(f"  - {n}")
     return "\n".join(lines)
+
+
+def _sendoff_summary(match: Match) -> str:
+    """'Qatar down to 9 men (2 sent off)' per side that lost a player, or ''
+    when nobody was sent off. Each red card (a straight red OR a second yellow,
+    which ESPN emits as a Red event) takes the side from 11 down by one."""
+    reds: dict[str, int] = {}
+    for c in match.cards:
+        if (c.color or "").lower() == "red":
+            reds[c.team] = reds.get(c.team, 0) + 1
+    if not reds:
+        return ""
+    parts = []
+    for team in (match.home, match.away):
+        n = reds.get(team, 0)
+        if n:
+            left = max(0, 11 - n)
+            how = "1 player sent off" if n == 1 else f"{n} players sent off"
+            parts.append(f"{team} finished with {left} men ({how})")
+    return "; ".join(parts)
+
+
+def players_left_count(match: Match) -> int | None:
+    """The real number of men the SHORT-HANDED side has after red cards, for the
+    deterministic 'con N hombres' fix in text_polish. Returns the count ONLY when
+    exactly ONE side was reduced — if both lost players, a bare 'con N hombres'
+    is ambiguous, so we don't risk overwriting it (None = leave the text alone)."""
+    reds: dict[str, int] = {}
+    for c in match.cards:
+        if (c.color or "").lower() == "red":
+            reds[c.team] = reds.get(c.team, 0) + 1
+    if len(reds) != 1:
+        return None
+    (n,) = reds.values()
+    return max(0, 11 - n)
+
+
+def _stats_summary(match: Match) -> str:
+    """One-line 'Team: 53% poss, 11 shots (5 on), 6 corners, 12 fouls' per side
+    from the ESPN boxscore, or '' when no stats were captured."""
+    if not match.stats:
+        return ""
+    parts = []
+    for team in (match.home, match.away):
+        s = match.stats.get(team)
+        if not s:
+            continue
+        bits = []
+        if "possession" in s:
+            bits.append(f"{s['possession']:.0f}% possession")
+        if "shots" in s:
+            on = f" ({s['shots_on']} on target)" if "shots_on" in s else ""
+            bits.append(f"{s['shots']} shots{on}")
+        if "corners" in s:
+            bits.append(f"{s['corners']} corners")
+        if "fouls" in s:
+            bits.append(f"{s['fouls']} fouls")
+        if bits:
+            parts.append(f"{team} — {', '.join(bits)}")
+    return "; ".join(parts)
 
 
 # Word-length guidance per narration style.
@@ -234,6 +333,46 @@ _LENGTH = {
     "digest_long": "150-220 words with more detail and context — this is one match in a "
                    "longer YouTube digest.",
 }
+
+
+def _event_count(match: Match) -> int:
+    """Goals + cards — the things the narration must walk through one by one."""
+    return len(match.goals) + len(match.cards)
+
+
+def _length_for(match: Match, style: str) -> str:
+    """Word-length guidance. The digest styles stay fixed (their duration is
+    budgeted elsewhere), but the single-match reel scales with the number of
+    events so a busy game has room to narrate every goal's origin, assist and
+    finish without being truncated mid-match."""
+    if style != "full":
+        return _LENGTH.get(style, _LENGTH["full"])
+    n = _event_count(match)
+    if n <= 4:
+        return _LENGTH["full"]                       # quiet game — keep it tight
+    if n <= 8:
+        return ("160-240 words. Several things happened — give EACH goal its full "
+                "detail (origin, assist and finish) plus the opening and closing.")
+    return ("230-340 words. This was an EVENTFUL match — narrate EVERY goal with "
+            "its origin, assist and finish, and every card, without rushing or "
+            "skipping any; still open with the hook and end with the score + call "
+            "to action.")
+
+
+def _max_tokens_for(match: Match, style: str) -> int:
+    """Token budget for the narration call. Generous headroom over the word
+    target (Spanish + the goal shouts use more tokens than words) so the script
+    is never cut off before the final score and call to action. ~3 tokens/word."""
+    if style == "digest_short":
+        return 300
+    if style != "full":
+        return 700
+    n = _event_count(match)
+    if n <= 4:
+        return 700
+    if n <= 8:
+        return 1000
+    return 1400
 
 
 def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
@@ -250,7 +389,13 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
     a free-form angle ('the most exciting World Cup ties') woven into them.
     """
     lang = _LANG_NAME.get(language, "Spanish")
-    length = _LENGTH.get(style, _LENGTH["full"])
+    # Length scales with how much actually happened. A fixed cap truncated busy
+    # games (a 6-2 with eight goals ran out of words mid-match, dropping the
+    # final score and a penalty), which both reads badly AND trips the guardrail.
+    # For the single-match reel we widen the target — and the token budget —
+    # when there are many events, so every goal can carry its full detail.
+    length = _length_for(match, style)
+    max_tokens = _max_tokens_for(match, style)
 
     # Stadium rule. The World Cup never names the venue; the facts block already
     # withholds it, and this also forbids inventing one. Every other competition
@@ -324,6 +469,19 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         f"{intro_outro}"
         "- Keep the energy sky-high from the first word — sell the drama in one breath "
         "and never let the tension drop.\n"
+        "- SOUND HUMAN ABOVE ALL — this is the #1 rule. You are a person telling the "
+        "story of the match, NOT a system reading a data feed. EVERY fact (goals, "
+        "cards, VAR, stats, minutes) must be woven into flowing spoken sentences "
+        "with CONNECTORS, never dropped as a bare label. Link events with phrases "
+        "like 'acto seguido', 'apenas un minuto después', 'mientras tanto', 'cuando "
+        "parecía que...', 'y entonces', 'para colmo', 'sin embargo', 'lo que nadie "
+        "esperaba', 'tras la revisión'. WRONG (robotic data): 'Minuto 33. No "
+        "penalty Canadá. Tarjeta roja Homam Ahmed.' RIGHT (human): 'y en el 33 "
+        "llega la polémica: el árbitro va al monitor, lo piensa, y finalmente "
+        "decide que no hay penal para Canadá... pero saca la roja a Homam Ahmed, "
+        "¡a las duchas!'. If two events share a minute or are close, JOIN them into "
+        "one narrated moment instead of listing them. Read your sentence back: if "
+        "it sounds like a notification or a stat line, rewrite it as speech.\n"
         "- Short, explosive, breathless sentences. Build unbearable tension before each goal, "
         "then EXPLODE. Vary the rhythm: whisper the build-up, scream the goal.\n"
         "- Pour in raw emotion and vivid, visceral imagery — the roar of the crowd, nerves of "
@@ -341,32 +499,151 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         "('¡GOOOL!') should ride the SAME breath as the action, joined by 'y'/'para'/a "
         "comma — the action and the goal are one motion, not two separate lines.\n"
         "- Put the most intense words in CAPITALS for emphasis.\n"
-        "- When 'how it happened' is given for a goal, describe the play vividly using it.\n"
+        "- GOAL DETAIL — when a goal gives 'how it happened', you MUST narrate "
+        "the SPECIFIC finish, never a generic 'gol' or 'gol con la derecha' when "
+        "the data says more. Translate ESPN's wording faithfully into natural "
+        "Spanish, inventing NOTHING beyond it:\n"
+        "    · 'header' -> 'de cabeza' / 'un cabezazo' / 'testarazo'.\n"
+        "    · 'volley' -> 'de volea' (a 'gol de bolea'); 'half volley' -> 'media volea'.\n"
+        "    · 'right footed shot' -> 'con la derecha' / 'derechazo'; 'left footed "
+        "shot' -> 'con la izquierda' / 'zurdazo'.\n"
+        "    · 'tap-in' -> 'a placer' / 'empujándola'; 'chip'/'lobbed' -> 'de "
+        "vaselina'; 'long range'/'from outside the box' -> 'desde fuera del área' / "
+        "'un misil de larga distancia'.\n"
+        "    · location: 'from the centre of the box' -> 'desde el corazón del "
+        "área'; 'from close range' / 'very close range' -> 'a quemarropa'; 'from a "
+        "difficult angle' -> 'desde un ángulo imposible'.\n"
+        "    · HOW THE PLAY STARTED (narrate this when given): 'following a corner' "
+        "-> 'tras un córner' / 'tras el saque de esquina'; 'from a free kick' / "
+        "'direct free kick' -> 'de tiro libre directo'; 'following a free kick' / "
+        "'following a set piece' -> 'en una jugada a balón parado'; 'following a "
+        "fast break' -> 'al contragolpe' / 'en una contra letal'; 'following a "
+        "throw-in' -> 'tras un saque de banda'.\n"
+        "    · THE ASSIST and HOW it was given (always credit it): 'Assisted by X' "
+        "-> 'tras la asistencia de X', 'servido por X', 'habilitado por X'; add the "
+        "PASS TYPE when stated — 'with a cross' -> 'con un centro' / 'tras el centro "
+        "de X'; 'with a through ball' -> 'con un pase filtrado' / 'con un pase entre "
+        "líneas'; 'with a headed pass' -> 'con un peinazo' / 'de cabeza'; 'with a "
+        "long ball' -> 'con un pase largo'. So 'header ... Assisted by X with a "
+        "cross following a corner' becomes '¡cabezazo tras el centro de X en el "
+        "córner!'.\n"
+        "  COMBINE these into ONE vivid sentence — origin + assist + finish + "
+        "placement — so the listener sees the whole play, e.g. 'al contragolpe, X "
+        "filtró para Y que definió con la derecha al ángulo'. Use ONLY what the "
+        "data states; never invent an origin, an assist or a pass type.\n"
+        "  Use the EXACT body part and finish the data states — do NOT swap a header "
+        "for a shot, a left foot for a right, or invent a volley/header the data "
+        "does not mention. If a goal has NO 'how it happened', narrate it with "
+        "energy but WITHOUT inventing how it was scored.\n"
+        "- OWN GOAL: when the goal is an 'own goal', say so with an UNMISTAKABLE "
+        "term — 'autogol', 'en propia puerta', 'gol en contra' — and credit the "
+        "goal to the team that BENEFITS (the opponent). Do NOT bury it in vague "
+        "wording like 'entrega el balón': make it crystal clear it was an own "
+        "goal, e.g. 'desafortunado AUTOGOL de X, que manda el balón a su propia "
+        "red'.\n"
         "- Go through the match EVENT BY EVENT in the given chronological order, narrating "
         "EVERY card AND every goal as they happen. Do not skip cards.\n"
+        "- ATTRIBUTION IS SACRED: each goal's scorer, foot/finish and assist belong "
+        "to THAT goal only. When ONE player scores TWICE (a brace), keep each goal's "
+        "own detail straight — do NOT borrow the foot, assist or origin of his other "
+        "goal, and do NOT merge the two. Narrate them as two separate moments at "
+        "their two minutes. If one of his goals was a penalty, say 'penal' on THAT "
+        "goal and not the other.\n"
+        "- ONE CARD = ONE MENTION (critical, never break this): each booking is "
+        "named ONLY ONCE. Choose a SINGLE verb for it — 'se gana la amarilla', OR "
+        "'ve la cartulina', OR 'el árbitro le muestra la amarilla', OR 'es "
+        "amonestado', OR 'se lleva una tarjeta' — and then MOVE ON to the next "
+        "event. NEVER chain two card verbs for the SAME booking. WRONG (repeats "
+        "the one card): 'le dan la tarjeta y el árbitro le muestra la tarjeta', "
+        "'se gana la amarilla... y ve la cartulina amarilla', 'es amonestado y "
+        "recibe la tarjeta'. RIGHT: 'el árbitro le muestra la amarilla por la "
+        "falta' — and that's it, one clause. The word 'tarjeta'/'amarilla'/"
+        "'cartulina'/'roja' must appear ONCE per booking, not twice.\n"
         "- Narrate cards like a HUMAN commentator, never as a data line. NEVER say "
         "'minuto 7, Buba Sangaré, tarjeta' — that sounds like a robot reading a log. "
-        "Instead make the player the subject of an ACTION and vary the verb every time: "
+        "Instead make the player the subject of an ACTION (using the SINGLE verb "
+        "from the rule above): "
         "'al minuto 7 Buba Sangaré se gana la primera amarilla del partido', "
         "'ve la cartulina amarilla', 'el árbitro le muestra la amarilla', "
-        "'es amonestado', 'se lleva una tarjeta'. For a RED card raise the drama: "
+        "'es amonestado', 'se lleva una tarjeta'. Vary which verb you use across "
+        "different cards so no two bookings sound the same. "
+        "For a RED card raise the drama: "
         "'roja directa, ¡y se queda con uno menos!', 'expulsado, deja a los suyos en "
-        "inferioridad'. CRITICAL: do NOT invent WHY the card was shown — you are NOT "
-        "told the reason, so never add a cause like 'tras una dura entrada', 'por "
-        "protestar' or 'por falta'. Only state who, the team, the colour and the minute. "
+        "inferioridad'. CARD REASON: when — and ONLY when — a card event gives a "
+        "'reason', state that cause naturally and VARY the wording so no two cards "
+        "sound the same. Map it like this (and rotate among the options): "
+        "'a bad foul' -> 'por una falta' / 'por una entrada dura' / 'por una "
+        "infracción' / 'por cortar el avance con falta' / 'por una falta táctica'; "
+        "'a rough tackle' -> 'por una entrada peligrosa' / 'por una entrada fuerte'; "
+        "When the reason names the VICTIM ('a bad foul ON Enner Valencia'), SAY "
+        "the victim — 'por una falta sobre Enner Valencia', 'por derribar a Enner "
+        "Valencia', 'por una entrada sobre Valencia'. The victim is a FACT only "
+        "when given with 'on <name>'; if it is not given, do NOT name who was "
+        "fouled. "
+        "'hand ball' -> 'por mano' / 'por tocar el balón con la mano'; "
+        "'excessive celebration' -> 'por celebrar en exceso' / 'por quitarse la "
+        "camiseta al festejar'. CRUCIAL — these are the ONLY card causes you know. "
+        "Do NOT add detail the data does NOT give: never specify WHO was fouled, "
+        "WHERE on the body ('un codazo', 'un golpe en la cara'), the body part, "
+        "'por detrás', 'por protestar', 'por pelear' or any invented specifics — "
+        "if ESPN only says 'a bad foul', the most you may say is that it was a "
+        "foul, never how it looked. If a card has NO 'reason' at all, do NOT "
+        "invent one; just state who, the team, the colour and the minute. "
         "NEVER change a card's colour: narrate it EXACTLY as the facts give it — a "
         "'Red card' is always 'roja', NEVER 'amarilla', no matter how many yellows "
         "came before it. "
-        "For the FIRST card of the match say so ('la primera amarilla del encuentro'). "
+        "DOUBLE YELLOW = RED: a card marked 'SECOND yellow ... SENT OFF' means the "
+        "player got a second booking and is EXPELLED — narrate it as such ('ve la "
+        "SEGUNDA amarilla y, por tanto, la roja: ¡expulsado!', 'doble amarilla y a "
+        "las duchas, deja a los suyos con uno menos'). This is the ONLY time you "
+        "say 'segunda amarilla'. "
+        "PLAYERS REMAINING — do NOT do the subtraction yourself. If the facts give "
+        "a 'Players left after red cards' line, use THAT exact number when you say "
+        "'con N hombres/jugadores'. One expulsion = 10 men, TWO expulsions = 9 men "
+        "(11 minus the count) — NEVER 8 for two reds. If unsure, say 'con uno menos' "
+        "/ 'con dos menos' (relative) instead of a wrong total. "
+        "ORDINAL CAUTION — do NOT number yellow cards by their order in the match: "
+        "say 'la primera amarilla del encuentro' ONLY for the very first booking; "
+        "for every later yellow do NOT call it 'la segunda/tercera/cuarta amarilla "
+        "del partido' — that wrongly suggests a double booking (two yellows = a "
+        "red). Just say the player 've la amarilla' / 'es amonestado' without a "
+        "running count. "
         "Announce the minute naturally ('al minuto 7', 'hacia la media hora', 'ya en el "
         "60') — never bare 'minuto 7'. Mix these forms so no two cards sound the same "
         "and it never reads as a list.\n"
+        "- The 'notable moments' (VAR calls, a shot off the post, a missed penalty) "
+        "are TERSE ENGLISH DATA LINES in the facts (e.g. 'VAR Decision: No Penalty "
+        "Canada', 'Card upgraded') — you must REPHRASE them as a HUMAN commentator "
+        "speaking a full, flowing Spanish sentence with connectors, NEVER read the "
+        "data line literally. WRONG (robotic): 'No penalty Canadá', 'VAR: tarjeta "
+        "elevada'. RIGHT (human): 'el VAR entra a revisar la jugada y, tras unos "
+        "segundos de tensión, la decisión es que NO hay penal para Canadá', 'el "
+        "árbitro va al monitor y termina elevando la tarjeta a roja'. ALWAYS say "
+        "'el VAR' WITH the article — NEVER a bare 'VAR revisa'. Use connectors "
+        "('tras la revisión', 'finalmente', 'después de mirarlo de nuevo') so it "
+        "sounds like live commentary, not a notification. Weave each note in at "
+        "its minute as part of the story; do not invent a moment that is not "
+        "listed. When a note explains "
+        "a PENALTY — 'X draws a foul in the penalty area' (X PROVOKED it) or "
+        "'penalty conceded by Y after a foul in the penalty area' (Y COMMITTED it) "
+        "— tie it to that penalty goal: 'X se ganó el penal tras ser derribado en "
+        "el área', 'penal por la falta de Y dentro del área'. Keep who-did-what "
+        "exactly as stated; never swap who drew it for who conceded it.\n"
         "- NEVER read team names in parentheses. Say them naturally — e.g. "
         "'gol del Girona, obra de Germán Martínez' or 'amarilla para Casemiro, del Real Madrid', "
         "never 'Germán Martínez (Girona)'.\n"
+        "- NEVER attribute a NATIONALITY or demonym to a player ('el argentino X', "
+        "'el brasileño Y', 'el francés Z'). You are NOT told any player's "
+        "nationality, and guessing it from a name is WRONG and offensive (many "
+        "players have dual nationality or play for a country other than their "
+        "birthplace — e.g. a Spanish-sounding name may be a Canada player). "
+        "Identify a player ONLY by the TEAM he plays for in THIS match, which is a "
+        "fact: say 'el jugador de Canadá', 'el delantero canadiense' meaning his "
+        "TEAM, or just his name — never a personal nationality you were not given.\n"
         "- Write FLAWLESS, natural Spanish grammar. Watch gender/agreement on "
         "football words: 'penalti'/'penalty'/'penal' are MASCULINE — say 'el "
-        "penalti', 'un penalti', 'convierte el penalti', NEVER 'la penalty'. "
+        "penalti', 'un penalti', 'el penal', 'un penal', 'convierte el penalti', "
+        "NEVER 'la penalty', NEVER 'una penal', NEVER 'la penal'. "
         "Use 'del'/'al', never 'de el'/'a el'.\n"
         "- Refer to the minute in MASCULINE: 'al minuto 51', 'al 51', 'en el 51', "
         "'hacia el 30' are all fine. NEVER feminine — never 'a la 51', 'en la 51' "
@@ -394,7 +671,7 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
-    return call_llm(messages, provider=provider, max_tokens=600, label="Narrator")
+    return call_llm(messages, provider=provider, max_tokens=max_tokens, label="Narrator")
 
 
 # ── Topic / educational narration (no match) ─────────────────────────
