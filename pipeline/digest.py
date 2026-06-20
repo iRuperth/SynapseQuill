@@ -278,6 +278,17 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
             from .publishers import upload_youtube
             record["youtube_url"] = upload_youtube(cfg, out, meta)
             record["youtube_privacy"] = cfg.YOUTUBE_PRIVACY
+            # Upload verified: free the local artifacts so an unattended run
+            # never fills the disk — the stitched digest .mp4 plus every
+            # segment's audio (seg_<id>.mp3) and crowd images. The published
+            # video is the source of truth; the record keeps the YouTube URL.
+            from .publishers import cleanup_local_artifacts
+            artifacts = [out]
+            for dm in digest_matches:
+                artifacts.append(cfg.IMAGE_DIR.parent / f"seg_{dm.fixture_id}.mp3")
+                artifacts.append(cfg.IMAGE_DIR / f"match_{dm.fixture_id}")
+            cleanup_local_artifacts(record["youtube_url"], artifacts,
+                                    on_step=on_step)
         except Exception as e:  # noqa: BLE001
             on_step("upload", f"Auto-upload failed: {e}")
             record["upload_error"] = str(e)
