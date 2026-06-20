@@ -461,22 +461,27 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
             intro_outro += (
                 "- This is the FIRST match of a daily recap. OPEN the recap in your "
                 "own words, welcoming viewers to the highlights and NAMING the "
-                "competition (given in the facts) the way local fans say it. When a "
-                "'Tournament stage' is given in the facts, NAME THAT STAGE in the "
-                "opening (e.g. 'el resumen de la fase de grupos del Mundial', 'el "
-                "resumen de los octavos de final del Mundial', 'el resumen de los "
-                "cuartos de final'). If no stage is given, just name the competition "
-                "('el resumen de la jornada del Mundial'). Do NOT mention any date "
-                "and do NOT invent a round/matchday number."
+                "competition by its REAL short name as given in the facts (the World "
+                "Cup is simply 'el Mundial'; La Liga is 'La Liga'; etc.). Keep it "
+                "plain and faithful — NEVER invent, embellish or brand the "
+                "competition with a made-up name (NOT 'Mundial Total', NOT 'Mundial "
+                "Extremo', no channel-style label). When a 'Tournament stage' is "
+                "given in the facts, NAME THAT STAGE in the opening (e.g. 'el resumen "
+                "de la fase de grupos del Mundial', 'el resumen de los octavos de "
+                "final del Mundial', 'el resumen de los cuartos de final'). If no "
+                "stage is given, just name the competition plainly ('Bienvenidos al "
+                "resumen de la jornada del Mundial'). Do NOT mention any date and do "
+                "NOT invent a round/matchday number."
                 f"{angle}\n")
         if digest_close:
             intro_outro += (
                 "- This is the LAST match of the recap. After narrating it, CLOSE "
                 "the whole recap with a short wrap-up and a natural call to action "
                 "inviting viewers to FOLLOW and LIKE so they never miss the epic "
-                "moments of THIS competition — name it the way local fans say it "
-                "('los momentos épicos de La Liga', '... del Mundial'), never just "
-                "a generic 'del fútbol'. Vary the wording.\n")
+                "moments of THIS competition — name it by its REAL short name "
+                "('los momentos épicos de La Liga', '... del Mundial'), never a "
+                "made-up brand name and never just a generic 'del fútbol'. Vary the "
+                "wording.\n")
 
     system = (system_preamble + "\n\n" if system_preamble else "") + (
         f"You are a LEGENDARY, white-hot football play-by-play commentator. Write ONLY in {lang}. "
