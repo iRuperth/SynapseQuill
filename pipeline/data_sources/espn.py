@@ -63,6 +63,33 @@ def _with_victim(reason: str, carded_player: str, victims: dict) -> str:
     return reason
 
 
+def merge_second_yellow(cards: list[Card]) -> list[Card]:
+    """Collapse a second-booking sending-off into ONE red card flagged as a
+    double yellow, so the timeline draws a single 'yellow+yellow -> red' icon.
+
+    A second yellow arrives as TWO key events on the same player and minute: a
+    plain 'Yellow Card' AND a 'Red Card' whose text reads 'Second yellow card
+    to ...'. Left as two cards the timeline draws both — and the stray yellow
+    can be the icon shown, so an expulsion looks like a mere booking. We drop
+    that duplicate yellow and mark the red as `second_yellow=True` so the
+    graphics know it came from a double booking and the narrator can say
+    'doble amarilla, expulsado'."""
+    red_keys = {(c.player, c.minute) for c in cards
+                if (c.color or "").lower() == "red"}
+    out = []
+    for c in cards:
+        is_dup_yellow = ((c.color or "").lower() == "yellow"
+                         and (c.player, c.minute) in red_keys)
+        if is_dup_yellow:
+            continue                                # drop the redundant yellow
+        if (c.color or "").lower() == "red" and (c.player, c.minute) in red_keys \
+                and any((o.player, o.minute) == (c.player, c.minute)
+                        and (o.color or "").lower() == "yellow" for o in cards):
+            c.second_yellow = True                  # this red WAS a double booking
+        out.append(c)
+    return out
+
+
 def _card_victims(summary: dict) -> dict:
     """Map 'carded player surname' -> 'foul victim full name' from the commentary.
     Keyed by the carded player's LAST token so it lines up with the keyEvents
@@ -279,7 +306,7 @@ class EspnSource(FootballDataSource):
                                   color=color,
                                   reason=_with_victim(_card_reason(ke.get("text")),
                                                       player, victims)))
-        return goals, cards
+        return goals, merge_second_yellow(cards)
 
 
 # ---------------------------------------------------------------------------

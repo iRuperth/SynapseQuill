@@ -29,6 +29,7 @@ from .espn import (
     _key_notes,
     _team_stats,
     _with_victim,
+    merge_second_yellow,
 )
 
 # League slug per competition. Extend as needed.
@@ -93,7 +94,7 @@ def _detail_from_summary(slug: str, event_id: str) -> dict:
             cards.append(Card(player=player, team=team, minute=minute, color=color,
                               reason=_with_victim(_card_reason(ke.get("text")),
                                                   player, victims)))
-    return {"goals": goals, "cards": cards,
+    return {"goals": goals, "cards": merge_second_yellow(cards),
             "stats": _team_stats(data), "notes": _key_notes(data)}
 
 

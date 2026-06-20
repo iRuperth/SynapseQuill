@@ -378,10 +378,24 @@ def _draw_ball(d, x, y, w, h):
                   fill=(20, 20, 20))
 
 
+def _draw_second_yellow(d, x, y, w, h):
+    """A double-booking sending-off: two yellow cards fanned out with the red one
+    in front, so viewers read 'yellow + yellow = red' at a glance."""
+    cw, ch = w * 0.5, h * 0.72
+    # Two yellows stepped down-left so both are clearly visible, then the red
+    # overlapping in front-right.
+    _draw_card(d, x, y, cw, ch, _YELLOW)
+    _draw_card(d, x + w * 0.22, y + h * 0.1, cw, ch, _YELLOW)
+    _draw_card(d, x + w * 0.5, y + h * 0.28, cw, ch, _RED)
+
+
 def _draw_event_icon(d, kind, x, y, w, h):
-    """Dispatch: goal/penalty -> ball, yellow/red -> coloured card."""
+    """Dispatch: goal/penalty -> ball, second_yellow -> yellow+yellow+red,
+    red -> red card, anything else -> yellow card."""
     if kind in ("goal", "penalty"):
         _draw_ball(d, x, y, w, h)
+    elif kind == "second_yellow":
+        _draw_second_yellow(d, x, y, w, h)
     elif kind == "red":
         _draw_card(d, x, y, w, h, _RED)
     else:  # yellow
@@ -407,7 +421,8 @@ def _timeline_frame(match: Match, language: str, p: float):
     for g in match.goals:
         events.append((_minute_num(g.minute), g.minute, "goal", g.player))
     for c in match.cards:
-        events.append((_minute_num(c.minute), c.minute, c.color.lower(), c.player))
+        kind = "second_yellow" if getattr(c, "second_yellow", False) else c.color.lower()
+        events.append((_minute_num(c.minute), c.minute, kind, c.player))
     events.sort(key=lambda e: e[0])
     events = events[:9]
 
@@ -544,7 +559,8 @@ def _unified_frame(match: Match, _language: str, p: float, *,
         kind = "penalty" if "Pen" in g.kind else "goal"
         events.append((_minute_num(g.minute), g.minute, kind, g.player, g.team))
     for c in match.cards:
-        events.append((_minute_num(c.minute), c.minute, c.color.lower(), c.player, c.team))
+        kind = "second_yellow" if getattr(c, "second_yellow", False) else c.color.lower()
+        events.append((_minute_num(c.minute), c.minute, kind, c.player, c.team))
     events.sort(key=lambda e: e[0])
 
     # Cap the total. With many events we spill into a second column (below), so

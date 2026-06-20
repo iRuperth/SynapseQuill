@@ -214,15 +214,17 @@ def _facts_block(match: Match) -> str:
             line += f" — how it happened (a FACT, narrate the finish and any " \
                     f"assist exactly as stated): {g.description}"
         events.append((_goal_min(g.minute), line))
-    # Track yellows already seen per player so a later RED for the same player is
-    # flagged as a SECOND-YELLOW sending-off (ESPN emits a second booking as a
-    # Red event). This is what lets the narrator say "doble amarilla, expulsado"
-    # instead of an ambiguous "segunda amarilla" that could mean the match's 2nd
-    # booking to a still-on-the-pitch player.
+    # Flag a SECOND-YELLOW sending-off so the narrator says "doble amarilla,
+    # expulsado" instead of an ambiguous "segunda amarilla". The parser already
+    # marks such a red with `second_yellow=True` (ESPN emits the booking as a
+    # Red event whose text reads "Second yellow card to ..."); we also keep the
+    # seen-yellow fallback for any source that does not set the flag.
     seen_yellow: set[str] = set()
     for c in sorted(match.cards, key=lambda x: _goal_min(x.minute)):
         line = f"minute {c.minute}: {c.color} card for {c.player} of {c.team}"
-        if c.color == "Red" and c.player in seen_yellow:
+        double = getattr(c, "second_yellow", False) or \
+            (c.color == "Red" and c.player in seen_yellow)
+        if c.color == "Red" and double:
             line += (" — this RED is the player's SECOND yellow of the match, so "
                      "he is SENT OFF (double booking). Narrate it as an expulsion.")
         if c.reason:

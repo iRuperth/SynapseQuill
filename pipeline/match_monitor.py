@@ -43,6 +43,9 @@ class Card:
     reason: str = ""     # why it was shown, e.g. "a bad foul" (from ESPN); the
     #                      narrator may state this ONLY because it is a fact,
     #                      never invented. Empty when the provider gives no cause.
+    second_yellow: bool = False  # a Red that came from a SECOND booking (double
+    #                      yellow). The timeline draws a 'yellow+yellow -> red'
+    #                      icon for it and the narrator says 'doble amarilla'.
 
 
 @dataclass
