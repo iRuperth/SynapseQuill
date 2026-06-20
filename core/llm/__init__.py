@@ -5,7 +5,8 @@ Two ways to talk to an LLM, both honouring LLM_PROVIDER (env or per-profile):
 
   call_llm(messages, provider=None)  -> str
       Raw text completion via direct REST wrappers. Simple, dependency-light,
-      used by the pipeline modules (narrator, content_generator).
+      used by the pipeline modules (narrator, content_generator). Falls back to
+      Groq once if the chosen provider fails outright (toggle LLM_FALLBACK_GROQ).
 
   get_llm(provider=None, temperature=...)  -> BaseChatModel
       A LangChain chat model with a built-in fallback chain
@@ -31,13 +32,34 @@ _RAW_DISPATCH = {
 
 def call_llm(messages: list, provider: str | None = None, max_tokens: int = 2000,
              timeout: int = 120, label: str = "LLM") -> str:
-    """Raw text completion. `messages` is OpenAI-style [{role, content}]."""
+    """Raw text completion. `messages` is OpenAI-style [{role, content}].
+
+    When the chosen provider fails outright — e.g. all five Cerebras keys are
+    rate-limited past the in-wrapper retry, or the API errors / returns empty —
+    we fall back to Groq once, so a single provider's bad day never kills a
+    narration. The fallback only fires when Groq is a DIFFERENT, configured
+    provider; if Groq also fails we re-raise the ORIGINAL error, which points at
+    the real cause rather than a misleading "no GROQ_API_KEY" message. Disable
+    with LLM_FALLBACK_GROQ=false.
+    """
     provider = (provider or os.getenv("LLM_PROVIDER", "groq")).lower()
     fn = _RAW_DISPATCH.get(provider)
     if fn is None:
         raise ValueError(f"Unknown LLM provider '{provider}'. "
                          f"Choose from {list(_RAW_DISPATCH)}.")
-    return fn(messages, max_tokens=max_tokens, timeout=timeout, label=label)
+    try:
+        return fn(messages, max_tokens=max_tokens, timeout=timeout, label=label)
+    except Exception as primary_error:  # noqa: BLE001 — any failure is a fallback trigger
+        fallback_on = os.getenv("LLM_FALLBACK_GROQ", "true").lower() == "true"
+        if not (fallback_on and provider != "groq" and os.getenv("GROQ_API_KEY")):
+            raise
+        print(f"[{label}] {provider} failed ({primary_error}) — falling back to Groq")
+        try:
+            return call_groq(messages, max_tokens=max_tokens, timeout=timeout,
+                             label=f"{label}/groq-fallback")
+        except Exception as groq_error:  # noqa: BLE001
+            print(f"[{label}] Groq fallback also failed ({groq_error})")
+            raise primary_error
 
 
 def get_llm(provider: str | None = None, temperature: float = 0.7):
