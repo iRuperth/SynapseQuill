@@ -281,6 +281,15 @@ def run_match(profile_id: str, match: Match, *,
             from .publishers import upload_youtube
             result["youtube_url"] = upload_youtube(cfg, video_path, meta)
             result["youtube_privacy"] = cfg.YOUTUBE_PRIVACY
+            # Upload verified (a watch URL came back): drop the local copies so an
+            # unattended scheduler run never fills the disk. The published video
+            # is the source of truth; the metadata record keeps the YouTube URL.
+            from .publishers import cleanup_local_artifacts
+            cleanup_local_artifacts(
+                result["youtube_url"],
+                [video_path, locals().get("audio_path"),
+                 cfg.IMAGE_DIR / f"match_{match.fixture_id}"],
+                on_step=on_step)
         except Exception as e:  # noqa: BLE001
             # A failed auto-upload must NOT lose the generated video. Record the
             # error and continue; it stays in the library to upload manually.
