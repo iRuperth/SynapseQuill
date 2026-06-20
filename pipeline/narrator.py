@@ -769,7 +769,7 @@ def narrate_topic(topic: str, *, language: str = "es", system_preamble: str = ""
 
 
 def topic_metadata(topic: str, narration: str, *, language: str = "es",
-                   provider: str | None = None) -> dict:
+                   provider: str | None = None, is_short: bool = True) -> dict:
     """YouTube title + description + tags for a topic video (LLM, no match facts).
 
     Grounded in the narration so it never claims more than the video says.
@@ -796,22 +796,25 @@ def topic_metadata(topic: str, narration: str, *, language: str = "es",
     return {
         "title": (data.get("title") or topic)[:90],
         "description": data.get("description") or topic,
-        "tags": build_topic_tags(topic),
+        "tags": build_topic_tags(topic, is_short=is_short),
     }
 
 
-def build_topic_tags(topic: str) -> list[str]:
-    """Deterministic hashtags for a topic video: a CamelCase tag of the topic's
-    key words, plus the brand + generic reach tags. No team/scorer tags (there is
-    no match)."""
-    tags: list[str] = []
+def build_topic_tags(topic: str, *, is_short: bool = True) -> list[str]:
+    """Four deterministic hashtags for a topic video, minimal so all three the
+    YouTube shows above the title carry weight: a format-specific reach tag
+    (#Shorts vertical / #Highlights horizontal), a CamelCase tag of the topic's
+    key words, then #CuriosidadesFutbol and #Mundial2026. No team/scorer tags
+    (there is no match)."""
+    lead = "#Shorts" if is_short else "#Highlights"
+    tags = [lead]
     # A CamelCase tag from the first few significant words of the topic.
     words = [w for w in (topic or "").replace("-", " ").split()
              if w.lower() not in {"de", "del", "la", "el", "los", "las", "y",
                                   "the", "of", "a", "an", "new", "nuevas", "nuevo"}]
     if words:
         tags.append(_hashtag(" ".join(words[:4])))
-    tags += ["#CuriosidadesFutbol", "#Mundial2026", *_GENERIC_TAGS]
+    tags += ["#CuriosidadesFutbol", "#Mundial2026"]
     seen, out = set(), []
     for t in tags:
         if t and t not in seen:
@@ -832,136 +835,31 @@ def _hashtag(text: str) -> str:
     return f"#{parts}" if parts else ""
 
 
-# Generic reach hashtags appended to every video to widen its audience. The
-# brand (#F88tball) leads them. Deliberately NO #Viral/#ForYou/#Shorts: bait
-# tags carry no algorithmic weight (YouTube detects Shorts by format) and only
-# dilute the topical signal. #Soccer stays for the US audience (World Cup 2026
-# is hosted there).
-_GENERIC_TAGS = ["#F88tball", "#Futbol", "#Football", "#Soccer",
-                 "#Highlights", "#Goles"]
+def build_tags(match: Match, *, is_short: bool = True) -> list[str]:
+    """Four deterministic hashtags, deliberately minimal so all three YouTube
+    shows above the title carry weight: a format-specific reach tag, then
+    #FIFAWorldCup, then the two countries in SPANISH with the WINNER first.
+    The lead tag is #Shorts for a vertical upload (its mandatory tag) or
+    #Highlights for the horizontal cut (#Shorts is ignored off-vertical, and
+    #Highlights is what fans search for a full recap). #FIFAWorldCup is the
+    single biggest World-Cup-specific tag (top reach + topical precision, an
+    official YouTube×FIFA tag); the countries are the highest-intent search
+    terms a fan actually types. We do NOT emit a combined matchup mashword
+    (#BrasilAlemania) — unreadable and unsearched — nor scorer/fan/brand/generic
+    spam: past the visible cap they never show and only dilute the topical signal.
+    The winner goes into the third (last visible) slot: 'Brasil' lands on the
+    chip a fan sees the night their team won. On a draw or unknown score we keep
+    home-then-away order."""
+    # Country names in Spanish (#Brasil #Alemania), accent-stripped by _hashtag
+    # because YouTube ends a hashtag link at the first non-ASCII char.
+    home_tag = _hashtag(_team_es(match.home))
+    away_tag = _hashtag(_team_es(match.away))
+    # Winner first: it claims the third (last visible) chip above the title.
+    hg, ag = match.home_goals or 0, match.away_goals or 0
+    country_tags = [away_tag, home_tag] if ag > hg else [home_tag, away_tag]
 
-
-# Fan-community hashtags: tags whose communities actively browse them — worth
-# more than any generic reach tag. Hand-curated (never AI-generated, so nothing
-# invented): each is the side's established nickname/chant as actually used by
-# its fanbase. Covers ALL 48 teams of the 2026 World Cup, plus La Liga clubs.
-_FAN_TAGS = {
-    # ── World Cup 2026: hosts (CONCACAF) ──
-    "United States": "#USMNT", "USA": "#USMNT",
-    "Mexico": "#VamosMexico", "Canada": "#CANMNT",
-    # ── CONCACAF qualified ──
-    "Panama": "#MareaRoja", "Haiti": "#LesGrenadiers",
-    "Curaçao": "#Korsou", "Curacao": "#Korsou",
-    # ── CONMEBOL ──
-    "Argentina": "#VamosArgentina", "Brazil": "#VaiBrasil",
-    "Uruguay": "#LaCeleste", "Colombia": "#VamosColombia",
-    "Ecuador": "#LaTri", "Paraguay": "#LaAlbirroja",
-    # ── UEFA ──
-    "Spain": "#VamosEspaña", "France": "#AllezLesBleus",
-    "England": "#ThreeLions", "Germany": "#DieMannschaft",
-    "Portugal": "#ForçaPortugal", "Netherlands": "#OnsOranje",
-    "Belgium": "#DiablesRouges", "Croatia": "#Vatreni",
-    "Switzerland": "#LaNati", "Austria": "#DasTeam",
-    "Scotland": "#TartanArmy", "Norway": "#Landslaget",
-    "Bosnia and Herzegovina": "#Zmajevi", "Sweden": "#Blågult",
-    "Türkiye": "#BizimCocuklar", "Turkey": "#BizimCocuklar",
-    "Czechia": "#CeskaRepre", "Czech Republic": "#CeskaRepre",
-    # ── AFC ──
-    "Japan": "#SamuraiBlue", "Iran": "#TeamMelli",
-    "South Korea": "#TaegukWarriors", "Korea Republic": "#TaegukWarriors",
-    "Australia": "#Socceroos", "Saudi Arabia": "#GreenFalcons",
-    "Qatar": "#AlAnnabi", "Uzbekistan": "#WhiteWolves",
-    "Jordan": "#Nashama", "Iraq": "#LionsOfMesopotamia",
-    # ── CAF ──
-    "Morocco": "#DimaMaghrib", "Senegal": "#TerangaLions",
-    "Egypt": "#Pharaohs", "Algeria": "#LesFennecs",
-    "Tunisia": "#EaglesOfCarthage", "South Africa": "#BafanaBafana",
-    "Ivory Coast": "#LesElephants", "Côte d'Ivoire": "#LesElephants",
-    "Ghana": "#BlackStars", "Cape Verde": "#TubaroesAzuis",
-    "DR Congo": "#LesLeopards", "Congo DR": "#LesLeopards",
-    # ── OFC ──
-    "New Zealand": "#AllWhites",
-    # ── Other big nations (not at WC2026 but may appear in other content) ──
-    "Italy": "#ForzaAzzurri",
-    # ── La Liga clubs ──
-    "Real Madrid": "#HalaMadrid", "Barcelona": "#ForçaBarça",
-    "Atlético Madrid": "#AupaAtleti", "Atletico Madrid": "#AupaAtleti",
-    "Athletic Club": "#AupaAthletic", "Real Betis": "#MushoBetis",
-    "Valencia": "#AmuntValencia", "Real Sociedad": "#AurreraReala",
-    "Osasuna": "#AupaOsasuna",
-}
-
-
-def _competition_tags(competition: str) -> list[str]:
-    """Well-formed competition hashtags (proper casing). World Cup expands to the
-    several tags fans search for."""
-    low = (competition or "").lower()
-    if "world cup" in low or "mundial" in low:
-        return ["#WorldCup2026", "#FIFAWorldCup2026", "#FIFAWorldCup",
-                "#Mundial2026"]
-    if "laliga" in low or "la liga" in low:
-        return ["#LaLiga"]
-    if "premier" in low:
-        return ["#PremierLeague"]
-    if "serie a" in low:
-        return ["#SerieA"]
-    if "bundesliga" in low:
-        return ["#Bundesliga"]
-    if "ligue 1" in low:
-        return ["#Ligue1"]
-    if "champions" in low:
-        return ["#ChampionsLeague"]
-    # Unknown competition: fall back to a CamelCase hashtag of its cleaned name.
-    return [_hashtag(competition)] if competition else []
-
-
-def _top_scorer_tags(match: Match, limit: int = 3) -> list[str]:
-    """Hashtags for the TOP scorers (most goals first), capped at `limit`.
-    Players are ranked by how many goals they scored in the match; ties keep the
-    order in which they first scored."""
-    counts: dict[str, int] = {}
-    order: list[str] = []
-    for g in match.goals:
-        p = g.player
-        if not p:
-            continue
-        if p not in counts:
-            counts[p] = 0
-            order.append(p)
-        counts[p] += 1
-    ranked = sorted(order, key=lambda p: counts[p], reverse=True)  # stable
-    return [_hashtag(p) for p in ranked[:limit]]
-
-
-def build_tags(match: Match) -> list[str]:
-    """Deterministic hashtags in priority order (only the first few show on
-    YouTube): competition, each team, top-3 scorers, the teams' fan-community
-    tags, country, then summary + brand + generic tags. No combined matchup
-    mashword and no stadium tag — neither is something people search.
-    Scorers go BEFORE the fan tags: a scorer's name is what fans search the
-    night of the game, and anything past the visible cap never shows."""
-    is_world_cup = _is_world_cup(match)
-
-    tags: list[str] = []
-    # 1) Competition, proper-cased (#WorldCup2026 #FIFAWorldCup ... or #LaLiga).
-    tags += _competition_tags(match.competition)
-    # 2) Each team as its OWN hashtag (#Canada #BosniaHerzegovina) plus their
-    #    fan-community tags. We deliberately do NOT emit a combined matchup tag
-    #    (#CanadaBosniaHerzegovina): a two-country mashword is unreadable and
-    #    nobody searches it. At the World Cup the teams ARE the countries, so
-    #    don't also add the host country.
-    tags += [_hashtag(match.home), _hashtag(match.away)]
-    # 3) Top-3 scorers (most goals first) — before the fan tags so they make
-    #    the visible cut.
-    tags += _top_scorer_tags(match, limit=3)
-    tags += [t for t in (_FAN_TAGS.get(match.home), _FAN_TAGS.get(match.away)) if t]
-    if not is_world_cup and match.country:
-        tags.append(_hashtag(match.country))
-    # 4) Summary. The stadium hashtag is deliberately omitted: a venue name is
-    #    not something people search for highlights.
-    tags.append("#Resumen")
-    # 5) Brand + generic reach tags last.
-    tags += _GENERIC_TAGS
+    lead = "#Shorts" if is_short else "#Highlights"
+    tags = [lead, "#FIFAWorldCup"] + country_tags
     # Dedupe preserving order, drop empties.
     seen, out = set(), []
     for t in tags:
@@ -971,28 +869,19 @@ def build_tags(match: Match) -> list[str]:
     return out
 
 
-def build_digest_tags(matches: list) -> list[str]:
-    """Hashtags for a daily DIGEST: the competition tags first
-    (#WorldCup2026 #FIFAWorldCup2026 #FIFAWorldCup #Mundial2026), then EVERY country that played
-    that day, each as its own hashtag (#Canada #BosniaHerzegovina #Mexico ...),
-    then the teams' fan-community tags and the generic reach tags.
-
-    No combined matchup mashwords and no per-match scorers/stadiums — a digest
-    spans several games, so a flat, readable list of competition + countries is
-    what people actually search. `matches` is a list of Match objects."""
-    tags: list[str] = []
-    # 1) Competition first — read from the first match (all share it in a digest).
-    if matches:
-        tags += _competition_tags(matches[0].competition)
-    # 2) Every country that played, in match order, home then away.
-    for m in matches:
-        tags += [_hashtag(m.home), _hashtag(m.away)]
-    # 3) Fan-community tags for those teams (extra reach for engaged audiences).
-    for m in matches:
-        tags += [t for t in (_FAN_TAGS.get(m.home), _FAN_TAGS.get(m.away)) if t]
-    # 4) Summary + generic reach tags last.
-    tags.append("#Resumen")
-    tags += _GENERIC_TAGS
+def build_digest_tags(*, is_short: bool = False) -> list[str]:
+    """Four hashtags for a daily DIGEST, kept minimal so all of the three YouTube
+    shows above the title carry weight. A format-specific reach tag leads:
+    #Shorts for the vertical reel, #Highlights for the horizontal long cut
+    (YouTube ignores #Shorts on a non-vertical video, and #Highlights is the
+    term fans search for a full recap). Then #FIFAWorldCup (biggest World-Cup-
+    specific tag, official YouTube×FIFA tag), #Mundial2026 (the year-specific tag
+    the Spanish audience searches), #Resumen (the day's-recap search term).
+    A digest spans several games with no single winner, so unlike a match Short
+    we don't rank countries — a flat competition+recap stack is what people
+    actually search."""
+    lead = "#Shorts" if is_short else "#Highlights"
+    tags = [lead, "#FIFAWorldCup", "#Mundial2026", "#Resumen"]
     # Dedupe preserving order, drop empties.
     seen, out = set(), []
     for t in tags:
@@ -1024,7 +913,7 @@ def _finalise_title(raw_title: str, match: Match) -> str:
 
 
 def youtube_metadata(match: Match, *, language: str = "es", provider: str | None = None,
-                     feedback: str = "") -> dict:
+                     feedback: str = "", is_short: bool = True) -> dict:
     """Generate a YouTube title + description (LLM) and deterministic tags.
 
     The title follows the shape "<hook>, <scoreline>" with team names always in
@@ -1064,5 +953,5 @@ def youtube_metadata(match: Match, *, language: str = "es", provider: str | None
     return {
         "title": _finalise_title(data.get("title", ""), match),
         "description": data.get("description") or _scoreline_es(match.scoreline),
-        "tags": build_tags(match),
+        "tags": build_tags(match, is_short=is_short),
     }

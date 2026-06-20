@@ -143,7 +143,8 @@ def run_match(profile_id: str, match: Match, *,
     # zurda' in the description). Deterministic layer only: cheap, no judge.
     on_step("metadata", "Generating YouTube metadata")
     from agents.guardrail import facts_check
-    meta = youtube_metadata(match, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER)
+    meta = youtube_metadata(match, language=cfg.LANGUAGE, provider=cfg.LLM_PROVIDER,
+                            is_short=(fmt.key == "reel"))
     # Verify-then-regenerate: check at the TOP of the loop so EVERY draft —
     # including the last — is verified (the old loop shipped the 3rd draft
     # unchecked). ordered_score=False: the title carries the final first and
@@ -158,7 +159,8 @@ def run_match(profile_id: str, match: Match, *,
         on_step("metadata", f"Description failed fact checks ({reasons}) — "
                             f"regenerating ({attempt + 2}/3)")
         meta = youtube_metadata(match, language=cfg.LANGUAGE,
-                                provider=cfg.LLM_PROVIDER, feedback=reasons)
+                                provider=cfg.LLM_PROVIDER, feedback=reasons,
+                                is_short=(fmt.key == "reel"))
     result["metadata"] = meta
 
     # --- 3. Media + voice + video (Phase 2) --------------------------
@@ -365,7 +367,7 @@ def run_topic_video(profile_id: str, topic: str, *,
     # --- 2. YouTube metadata -----------------------------------------
     on_step("metadata", "Generating YouTube metadata")
     meta = topic_metadata(topic, narration, language=cfg.LANGUAGE,
-                          provider=cfg.LLM_PROVIDER)
+                          provider=cfg.LLM_PROVIDER, is_short=(fmt.key == "reel"))
     result["metadata"] = meta
     if check_cancel():
         return {**result, "status": "cancelled"}

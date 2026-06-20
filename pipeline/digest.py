@@ -241,9 +241,11 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         s.close()
     digest.close()
 
-    # Digest hashtags: competition first, then every country that played, then
-    # fan + generic tags. build_digest_tags dedupes for us.
-    tags = build_digest_tags(digest_matches)
+    # Digest hashtags: a minimal #FIFAWorldCup #Mundial2026 #Resumen stack, led
+    # by a format-specific reach tag — #Shorts for the vertical reel cut,
+    # #Highlights for the horizontal long cut (YouTube ignores #Shorts on a
+    # non-vertical video, and #Highlights is what people search for full recaps).
+    tags = build_digest_tags(is_short=(fmt.key == "reel"))
 
     record = {
         "type": "digest", "day": day, "format": fmt.key,
