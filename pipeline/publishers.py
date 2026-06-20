@@ -12,6 +12,7 @@ Mirrors Synapse Core's upload_youtube pattern.
 """
 
 import pickle
+import shutil
 from pathlib import Path
 
 from core.brand_config import BrandProfile
@@ -129,3 +130,42 @@ def upload_youtube(cfg: BrandProfile, video_path: Path, metadata: dict) -> str:
         _add_to_playlist(youtube, cfg.YOUTUBE_PLAYLIST_ID, video_id)
 
     return f"https://youtube.com/watch?v={video_id}"
+
+
+def cleanup_local_artifacts(youtube_url: str, paths, *,
+                            on_step=lambda *_: None) -> list[str]:
+    """Delete the local files/dirs in `paths` ONCE the upload is verified.
+
+    The scheduler creates a video, uploads it, and then there is no reason to
+    keep the heavy artifacts (the .mp4, the .mp3 narration, the crowd images) on
+    this machine — the published YouTube copy is the source of truth. This frees
+    the disk so an unattended run never fills it up.
+
+    SAFETY: deletion only happens when `youtube_url` is a confirmed watch URL
+    (the value `upload_youtube` returns). A failed/blocked/skipped upload passes
+    an empty url here, so nothing is ever deleted while the only copy is local.
+    Each path is removed best-effort; a single failure is logged and skipped so
+    cleanup never breaks the run. Returns the list of paths actually removed.
+    """
+    if not (isinstance(youtube_url, str)
+            and youtube_url.startswith("https://youtube.com/watch?v=")):
+        return []                                   # not verified -> keep everything
+
+    removed: list[str] = []
+    for p in paths:
+        if not p:
+            continue
+        p = Path(p)
+        try:
+            if p.is_dir():
+                shutil.rmtree(p)
+            elif p.exists():
+                p.unlink()
+            else:
+                continue                            # already gone
+            removed.append(str(p))
+        except OSError as e:
+            on_step("cleanup", f"Could not delete {p.name}: {e}")
+    if removed:
+        on_step("cleanup", f"Uploaded — freed {len(removed)} local artifact(s)")
+    return removed
