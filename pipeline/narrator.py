@@ -104,6 +104,30 @@ def _was_comeback(match: Match) -> bool:
     return False
 
 
+def _comment_question(match: Match) -> str:
+    """A single Spanish comment-bait question that MATCHES the real shape of the
+    result, so the call to action never asks about a 'remontada' or a 'victoria'
+    when the game was actually a draw. Derived from the same classification as
+    describe_match. Falls back to a neutral question when the score is unknown."""
+    h, a = match.home_goals, match.away_goals
+    if h is None or a is None:
+        return "¿qué les pareció el partido?"
+    diff = abs(h - a)
+    pen = match.went_to_penalties or match.status == "PEN"
+    if pen:
+        return "¿quién merecía avanzar?"
+    if h == a:
+        return "¿les pareció justo el empate?"
+    # A win that was overturned from behind is a comeback; ask about that first.
+    if _was_comeback(match):
+        return "¿qué les pareció la remontada?"
+    if diff >= 4:
+        return "¿qué tal esta goleada?"
+    if diff >= 2:
+        return "¿qué les pareció la victoria?"
+    return "¿qué les pareció el partidazo?"
+
+
 def describe_match(match: Match) -> str | None:
     """A short, NEUTRAL description of the match's character, to guide the
     narration's tone. Returns an English guidance string (the other facts are in
@@ -419,7 +443,10 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
             "adjective. Mentioning the stadium is optional; only do it if it flows.\n")
 
     # A single-match reel (style "full") opens by presenting the match and closes
-    # by inviting viewers to follow + like.
+    # by inviting viewers to follow + like. The comment-bait question is computed
+    # from the real result so it never asks about a comeback/win/draw that did
+    # not happen.
+    comment_q = _comment_question(match)
     if style == "full":
         intro_outro = (
             "Structure the narration in THREE flowing parts (continuous spoken "
@@ -446,10 +473,15 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
             "are still fine earlier in the body, e.g. as how a goal started). If "
             "no stats are given, skip this and go "
             "straight to the call to action. FINALLY finish with a short, natural "
-            "call to action inviting viewers to FOLLOW the channel and leave a "
-            "LIKE for more highlights (e.g. 'si lo viviste con nosotros, síguenos "
-            "y deja tu like para más resúmenes'). Make it sound genuine, never "
-            "spammy, and vary it every time.\n"
+            "call to action inviting viewers to FOLLOW the channel, leave a "
+            "LIKE, and — crucially — drop a COMMENT answering THIS EXACT question, "
+            f"which already matches what happened in the match: '{comment_q}'. Ask "
+            "it naturally and invite them to answer in the comments (e.g. "
+            f"'{comment_q} ¡déjanoslo saber en los comentarios! Y si lo viviste "
+            "con nosotros, síguenos y deja tu like para más resúmenes'). You may "
+            "rephrase the WORDING for flow, but do NOT change its MEANING — never "
+            "ask about a comeback, a win or a draw that did not happen. Make it "
+            "sound genuine, never spammy, and vary the surrounding wording.\n"
         )
     else:
         # In a digest, only the first segment opens the recap and the last closes
@@ -480,8 +512,11 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
                 "inviting viewers to FOLLOW and LIKE so they never miss the epic "
                 "moments of THIS competition — name it by its REAL short name "
                 "('los momentos épicos de La Liga', '... del Mundial'), never a "
-                "made-up brand name and never just a generic 'del fútbol'. Vary the "
-                "wording.\n")
+                "made-up brand name and never just a generic 'del fútbol'. ALSO "
+                "invite them to drop a COMMENT with a fresh question that fits the "
+                "day's action (e.g. '¿cuál fue el partido de la jornada para "
+                "ustedes?', '¿qué resultado les sorprendió más?', '¿qué partidazo "
+                "se llevó el día?'). Vary the question and the wording.\n")
 
     system = (system_preamble + "\n\n" if system_preamble else "") + (
         f"You are a LEGENDARY, white-hot football play-by-play commentator. Write ONLY in {lang}. "
@@ -751,7 +786,10 @@ def narrate_topic(topic: str, *, language: str = "es", system_preamble: str = ""
         "energy — like a friend telling you something fascinating.\n"
         "- Put a few key words in CAPITALS for emphasis, but sparingly.\n"
         "- Close with a short, natural call to action inviting viewers to FOLLOW "
-        "and LIKE for more. Make it genuine, never spammy, and vary it.\n"
+        "and LIKE for more, AND to drop a COMMENT answering a fresh question you "
+        "ask them about the topic (e.g. '¿conocías este dato?', '¿qué opinan de "
+        "esta regla?', '¿les sorprendió?'). Make it genuine, never spammy, and "
+        "vary the question and wording.\n"
         f"- {grounding}{aud}\n"
         "- Write FLAWLESS, natural grammar. Keep it family-friendly and "
         "brand-safe: NO profanity or vulgar expressions.\n"
