@@ -17,7 +17,10 @@ LABEL="com.f88ball.scheduler"
 PROJECT_DIR="/Users/rup/Documents/DevelopmentLocal/F88tball"
 SRC_PLIST="$PROJECT_DIR/scripts/$LABEL.plist"
 DEST_PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-LOG="$PROJECT_DIR/profiles/worldcup_es/output/logs/scheduler.log"
+# Logs live under ~/Library/Logs (NOT ~/Documents): the Documents tree is
+# TCC-protected and launchd can be denied opening a log file there, which kills
+# the agent at spawn with EX_CONFIG (78) and no output.
+LOG="$HOME/Library/Logs/f88ball/scheduler.log"
 
 case "${1:-status}" in
   install)
