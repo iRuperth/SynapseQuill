@@ -30,10 +30,14 @@
     <key>WorkingDirectory</key>
     <string>/Users/rup/Documents/DevelopmentLocal/F88tball</string>
 
-    <!-- Logs so you can see what it's doing / any errors. -->
+    <!-- Logs so you can see what it's doing / any errors. Keep these OUT of
+         ~/Documents: that tree is TCC-protected on macOS and launchd's daemon
+         context can be denied opening a log file there (a com.apple.macl gets
+         stamped on the file), which makes the job die at spawn with EX_CONFIG
+         (78) and NO output. ~/Library/Logs is the standard, non-protected spot. -->
     <key>StandardOutPath</key>
-    <string>/Users/rup/Documents/DevelopmentLocal/F88tball/profiles/worldcup_es/output/logs/scheduler.log</string>
+    <string>/Users/rup/Library/Logs/f88ball/scheduler.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/rup/Documents/DevelopmentLocal/F88tball/profiles/worldcup_es/output/logs/scheduler.err.log</string>
+    <string>/Users/rup/Library/Logs/f88ball/scheduler.err.log</string>
 </dict>
 </plist>
