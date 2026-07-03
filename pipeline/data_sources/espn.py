@@ -23,7 +23,14 @@ from pipeline.match_monitor import Card, Goal, Match
 
 from .base import FootballDataSource
 
-_FINISHED_STATES = {"STATUS_FULL_TIME", "STATUS_FINAL"}
+# A knockout tie can end in normal time (STATUS_FULL_TIME / STATUS_FINAL), after
+# extra time (STATUS_FINAL_AET), or on penalties (STATUS_FINAL_PEN). ALL of these
+# are "finished" — omitting the AET/PEN variants (the World Cup's round of 32
+# onward) left decided-on-penalties matches looking still-in-progress forever, so
+# the scheduler never generated or uploaded them.
+_FINISHED_STATES = {
+    "STATUS_FULL_TIME", "STATUS_FINAL", "STATUS_FINAL_AET", "STATUS_FINAL_PEN",
+}
 
 # Pull the cause out of an ESPN card sentence so the narrator can state it as a
 # FACT (never invented): "... is shown the yellow card for a bad foul." ->
