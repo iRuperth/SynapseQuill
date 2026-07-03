@@ -3,8 +3,9 @@
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   launchd service that keeps the World Cup scheduler running in the background.
-  Install:  cp this file to ~/Library/LaunchAgents/ then `launchctl load` it
-  (see scripts/f88ball_scheduler_ctl.sh). Starts at login, restarts on crash.
+  This is a TEMPLATE: __PROJECT_DIR__ is substituted with the repo's real path
+  by scripts/f88ball_scheduler_ctl.sh at `install` time (do not `cp` it directly
+  or the placeholder won't be resolved). Starts at login, restarts on crash.
 -->
 <plist version="1.0">
 <dict>
@@ -14,7 +15,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/rup/Documents/DevelopmentLocal/F88tball/scripts/f88ball_scheduler.sh</string>
+        <string>__PROJECT_DIR__/scripts/f88ball_scheduler.sh</string>
     </array>
 
     <!-- Start at login and keep it alive: relaunch if it ever exits/crashes. -->
@@ -28,7 +29,7 @@
     <integer>30</integer>
 
     <key>WorkingDirectory</key>
-    <string>/Users/rup/Documents/DevelopmentLocal/F88tball</string>
+    <string>__PROJECT_DIR__</string>
 
     <!-- Logs so you can see what it's doing / any errors. Keep these OUT of
          ~/Documents: that tree is TCC-protected on macOS and launchd's daemon

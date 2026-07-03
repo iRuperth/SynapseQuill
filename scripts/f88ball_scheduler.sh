@@ -8,7 +8,10 @@
 
 set -euo pipefail
 
-PROJECT_DIR="/Users/rup/Documents/DevelopmentLocal/F88tball"
+# Locate the project from this script's own path (scripts/..) so a moved repo
+# keeps working without editing hardcoded paths.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROFILE="worldcup_es"
 INTERVAL="120"   # seconds between polls
 
