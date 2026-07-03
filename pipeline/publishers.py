@@ -13,6 +13,7 @@ Mirrors Synapse Core's upload_youtube pattern.
 
 import pickle
 import shutil
+import time
 from pathlib import Path
 
 from core.brand_config import BrandProfile
@@ -21,6 +22,19 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",
 ]
+
+# httplib2 (what googleapiclient uses under the hood) creates sockets with NO
+# timeout by default, so a connection that dies mid-transfer blocks the calling
+# thread FOREVER — the scheduler ran in a single thread, so one hung upload
+# froze the whole poll loop (seen as a stuck CLOSE_WAIT socket, 0% CPU, no new
+# log lines for hours). A finite socket timeout turns that hang into a normal
+# exception the retry loop / scheduler's try/except can handle.
+_UPLOAD_SOCKET_TIMEOUT = 300      # seconds per HTTP request/chunk
+# A resumable upload can hit transient network/5xx errors mid-stream; retry the
+# failed chunk a bounded number of times with backoff before giving up, so a
+# blip doesn't lose an otherwise-complete upload.
+_UPLOAD_MAX_RETRIES = 5
+_RETRIABLE_STATUS = frozenset({500, 502, 503, 504})
 
 
 def _credentials(cfg: BrandProfile):
@@ -90,6 +104,56 @@ def _add_to_playlist(youtube, playlist_id: str, video_id: str) -> None:
               f"{playlist_id}: {e}")
 
 
+def _timed_http(creds):
+    """Build an authorized httplib2.Http whose socket has a finite timeout.
+
+    Without this, httplib2 sockets never time out, so a stalled YouTube
+    connection hangs the caller indefinitely. google-auth's AuthorizedHttp
+    wraps the timed Http so credentials still apply."""
+    import google_auth_httplib2
+    import httplib2
+
+    return google_auth_httplib2.AuthorizedHttp(
+        creds, http=httplib2.Http(timeout=_UPLOAD_SOCKET_TIMEOUT))
+
+
+def _resumable_upload(request):
+    """Drive a resumable upload to completion, retrying failed chunks.
+
+    Each next_chunk() sends one chunk. A finite socket timeout (see
+    _timed_http) means a stalled connection raises instead of hanging; a
+    transient network error or a retriable 5xx from YouTube is retried a
+    bounded number of times with exponential backoff. Non-retriable HttpErrors
+    (bad request, quota, auth) propagate immediately — the scheduler's
+    try/except logs them and moves on rather than crashing."""
+    from googleapiclient.errors import HttpError
+
+    response = None
+    retries = 0
+    while response is None:
+        try:
+            _status, response = request.next_chunk()
+        except HttpError as e:
+            if e.resp.status in _RETRIABLE_STATUS and retries < _UPLOAD_MAX_RETRIES:
+                retries += 1
+            else:
+                raise
+        except OSError as e:
+            # OSError covers socket timeouts (TimeoutError) and dropped
+            # connections — the failure mode that used to hang the scheduler
+            # forever, now that _timed_http gives sockets a finite timeout.
+            if retries < _UPLOAD_MAX_RETRIES:
+                retries += 1
+                print(f"[publishers] upload chunk failed ({e}); "
+                      f"retry {retries}/{_UPLOAD_MAX_RETRIES}")
+            else:
+                raise
+        else:
+            continue
+        time.sleep(min(2 ** retries, 30))          # exponential backoff, capped
+    return response
+
+
 def upload_youtube(cfg: BrandProfile, video_path: Path, metadata: dict) -> str:
     """Upload `video_path` and return the watch URL."""
     from googleapiclient.discovery import build
@@ -98,7 +162,11 @@ def upload_youtube(cfg: BrandProfile, video_path: Path, metadata: dict) -> str:
     privacy = "private" if cfg.PRACTICE_MODE else cfg.YOUTUBE_PRIVACY
 
     creds = _credentials(cfg)
-    youtube = build("youtube", "v3", credentials=creds)
+    # Pass a timeout-bearing authorized http so no single request can hang
+    # forever (build() otherwise makes a default httplib2.Http with no timeout).
+    # `http` already carries the credentials, so `credentials` must NOT also be
+    # passed — build() rejects both together as mutually exclusive.
+    youtube = build("youtube", "v3", http=_timed_http(creds))
 
     tags = metadata.get("tags", [])
     body = {
@@ -119,10 +187,7 @@ def upload_youtube(cfg: BrandProfile, video_path: Path, metadata: dict) -> str:
     media = MediaFileUpload(str(video_path), mimetype="video/mp4", resumable=True)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
 
-    response = None
-    while response is None:
-        _status, response = request.next_chunk()
-
+    response = _resumable_upload(request)
     video_id = response["id"]
 
     # Add to the profile's playlist, e.g. Reels Mundial 2026, if configured.
