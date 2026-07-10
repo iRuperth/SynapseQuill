@@ -28,8 +28,17 @@ from .base import FootballDataSource
 # are "finished" — omitting the AET/PEN variants (the World Cup's round of 32
 # onward) left decided-on-penalties matches looking still-in-progress forever, so
 # the scheduler never generated or uploaded them.
+#
+# We DON'T collapse them all to "FT": the AET/PEN distinction is the only reliable
+# signal that a level game was decided in extra time or on penalties. Collapsing
+# to "FT" threw it away, so a 0-0 shootout that ESPN served WITHOUT a shootoutScore
+# (home_pens/away_pens then stay None, so went_to_penalties is False) narrated as a
+# plain draw. Mapping to "PEN"/"AET" keeps `status == "PEN"` as the narrator's
+# fallback when the shootout score is missing. All three land in match_monitor's
+# _FINISHED set, so is_finished stays True either way.
 _FINISHED_STATES = {
-    "STATUS_FULL_TIME", "STATUS_FINAL", "STATUS_FINAL_AET", "STATUS_FINAL_PEN",
+    "STATUS_FULL_TIME": "FT", "STATUS_FINAL": "FT",
+    "STATUS_FINAL_AET": "AET", "STATUS_FINAL_PEN": "PEN",
 }
 
 # Pull the cause out of an ESPN card sentence so the narrator can state it as a
@@ -190,7 +199,7 @@ class EspnSource(FootballDataSource):
         status = ((ev.get("status") or {}).get("type") or {}).get("name", "")
         return Match(
             fixture_id=int(ev["id"]) if str(ev.get("id", "")).isdigit() else ev.get("id"),
-            status="FT" if status in _FINISHED_STATES else status or "NS",
+            status=_FINISHED_STATES.get(status) or status or "NS",
             home=_name(home), away=_name(away),
             home_goals=_score(home), away_goals=_score(away),
             home_pens=_pens(home), away_pens=_pens(away),
@@ -271,7 +280,7 @@ class EspnSource(FootballDataSource):
         status = ((comp.get("status") or {}).get("type") or {}).get("name", "")
         match = Match(
             fixture_id=int(fixture_id) if str(fixture_id).isdigit() else fixture_id,
-            status="FT" if status in _FINISHED_STATES else status or "FT",
+            status=_FINISHED_STATES.get(status) or status or "FT",
             home=_name(home), away=_name(away),
             home_goals=_score(home), away_goals=_score(away),
             home_pens=_pens(home), away_pens=_pens(away),
