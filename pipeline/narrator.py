@@ -213,6 +213,18 @@ def _facts_block(match: Match) -> str:
         f"Away team: {match.away}",
         f"Final score: {match.home} {match.home_goals} - {match.away_goals} {match.away}",
     ]
+    # Penalty shootout result — a FACT the narrator must STATE, including the
+    # shootout scoreline and who advanced, so a 0-0 (or any level) tie decided on
+    # penalties doesn't read as a plain draw. Only when the provider gave us the
+    # shootout score (home_pens/away_pens); otherwise we say the game went to
+    # penalties without inventing a number (see the "Match character" line).
+    if match.went_to_penalties:
+        winner = match.winner
+        adv = f", so {winner} advanced" if winner else ""
+        lines.append(
+            f"Penalty shootout (a FACT — you MUST state that the tie was decided "
+            f"on penalties AND give this shootout score): {match.home} "
+            f"{match.home_pens} - {match.away_pens} {match.away} on penalties{adv}.")
     # Tone guidance from the result's shape (blowout / close / draw / penalties /
     # comeback). The model conveys this in its own respectful words.
     character = describe_match(match)
