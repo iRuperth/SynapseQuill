@@ -367,7 +367,8 @@ def run_topic_video(profile_id: str, topic: str, *,
     # --- 2. YouTube metadata -----------------------------------------
     on_step("metadata", "Generating YouTube metadata")
     meta = topic_metadata(topic, narration, language=cfg.LANGUAGE,
-                          provider=cfg.LLM_PROVIDER, is_short=(fmt.key == "reel"))
+                          provider=cfg.LLM_PROVIDER, is_short=(fmt.key == "reel"),
+                          competition=cfg.COMPETITION)
     result["metadata"] = meta
     if check_cancel():
         return {**result, "status": "cancelled"}

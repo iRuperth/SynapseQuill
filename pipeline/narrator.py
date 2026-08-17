@@ -10,6 +10,7 @@ Multi-language: ES / EN / FR / IT, selected by the profile language.
 
 import re
 
+from core import competitions
 from core.llm import call_llm
 
 from .match_monitor import Match
@@ -20,12 +21,12 @@ _LANG_NAME = {
 }
 
 
-def _is_world_cup(match: Match) -> bool:
-    # True for FIFA World Cup matches. ESPN reports 'World Cup', the presets use
-    # 'Mundial'. Used to suppress the stadium name, which we never mention for
-    # the World Cup.
-    low = (match.competition or "").lower()
-    return "world cup" in low or "mundial" in low
+def _hides_venue(match: Match) -> bool:
+    # Whether the stadium must never be named. That is the World Cup's rule, not
+    # a universal one — a league match is precisely where naming the ground adds
+    # colour ("en el Sardinero") — so the answer comes from the competition
+    # preset instead of a hardcoded name check.
+    return competitions.hides_venue(match.competition)
 
 # ESPN team name -> Spanish. Covers every nation in the World Cup 2026 field; an
 # unknown name falls through to its English form so a title is never blank.
@@ -52,8 +53,38 @@ _TEAMS_ES = {
 }
 
 
+# ESPN club label -> the name a Spanish broadcaster actually says. Only the ones
+# ESPN writes differently: it drops the linking word ("Racing Santander") or uses
+# the English short form ("Athletic Club"). Everything else — Barcelona, Sevilla,
+# Villarreal, Getafe — is already the Spanish name and falls through untouched.
+# Covers LaLiga 2026/27 plus the sides that move between Primera and Hypermotion.
+# No entry carries an article ("el Betis"): these names also render the
+# scoreline, where "el Betis 2-1 Sevilla" would read as broken Spanish.
+_CLUBS_ES = {
+    "Racing Santander": "Racing de Santander",
+    "Celta Vigo": "Celta de Vigo",
+    "Atletico Madrid": "Atlético de Madrid",
+    "Atlético Madrid": "Atlético de Madrid",
+    "Deportivo": "Deportivo de La Coruña",
+    "RC Celta Fortuna": "Celta Fortuna",
+    "Real Sociedad II": "Real Sociedad B",
+    "FC Andorra": "Andorra",
+}
+
+
 def _team_es(name: str) -> str:
-    """Spanish name of a team, or its original form when not in the map."""
+    """The name to SAY/WRITE for a team: nations translated to Spanish, clubs
+    normalised to their Spanish form. Unknown names pass through unchanged so a
+    title is never blank."""
+    return _TEAMS_ES.get(name) or _CLUBS_ES.get(name, name)
+
+
+def _team_tag(name: str) -> str:
+    """The text a team's HASHTAG is built from — not always its display name.
+    Nations use their Spanish name (#Brasil). Clubs use ESPN's own label, which
+    is already the term fans search (#RealMadrid, #RacingSantander): the display
+    fixes above add linking words that only bloat a tag (#RacingDeSantander) or
+    an article that breaks it outright (#ElBetis)."""
     return _TEAMS_ES.get(name, name)
 
 
@@ -231,10 +262,10 @@ def _facts_block(match: Match) -> str:
     if character:
         lines.append(f"Match character (use this tone, in your own words, "
                      f"respectfully): {character}")
-    # The venue is given to the narrator for every competition EXCEPT the World
-    # Cup, where the stadium is never named. Withholding it from the facts is the
-    # robust guard: the model cannot mention a stadium it was never told.
-    if match.venue and not _is_world_cup(match):
+    # The venue is given to the narrator for every competition EXCEPT the ones
+    # whose preset sets hide_venue (the World Cup). Withholding it from the facts
+    # is the robust guard: the model cannot mention a stadium it was never told.
+    if match.venue and not _hides_venue(match):
         lines.append(f"Venue: {match.venue}")
     # Build ONE chronological list of every event (goals AND cards together),
     # so the narration can run through the match minute by minute. The goal's
@@ -439,10 +470,10 @@ def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
     length = _length_for(match, style)
     max_tokens = _max_tokens_for(match, style)
 
-    # Stadium rule. The World Cup never names the venue; the facts block already
-    # withholds it, and this also forbids inventing one. Every other competition
-    # keeps the optional, natural mention.
-    if _is_world_cup(match):
+    # Stadium rule. Competitions that hide the venue (the World Cup) never name
+    # it; the facts block already withholds it, and this also forbids inventing
+    # one. Every other competition keeps the optional, natural mention.
+    if _hides_venue(match):
         stadium_rule = (
             "- NEVER name or hint at the stadium, venue, arena or city where the "
             "match was played. Do not invent one. The location is irrelevant to "
@@ -819,10 +850,13 @@ def narrate_topic(topic: str, *, language: str = "es", system_preamble: str = ""
 
 
 def topic_metadata(topic: str, narration: str, *, language: str = "es",
-                   provider: str | None = None, is_short: bool = True) -> dict:
+                   provider: str | None = None, is_short: bool = True,
+                   competition: str = "") -> dict:
     """YouTube title + description + tags for a topic video (LLM, no match facts).
 
     Grounded in the narration so it never claims more than the video says.
+    `competition` is the CHANNEL's competition (a preset key) — a topic video has
+    no match to read it from, so it comes from the profile.
     """
     lang = _LANG_NAME.get(language, "Spanish")
     system = (
@@ -846,16 +880,18 @@ def topic_metadata(topic: str, narration: str, *, language: str = "es",
     return {
         "title": (data.get("title") or topic)[:90],
         "description": data.get("description") or topic,
-        "tags": build_topic_tags(topic, is_short=is_short),
+        "tags": build_topic_tags(topic, is_short=is_short,
+                                 competition=competition),
     }
 
 
-def build_topic_tags(topic: str, *, is_short: bool = True) -> list[str]:
+def build_topic_tags(topic: str, *, is_short: bool = True,
+                     competition: str = "") -> list[str]:
     """Four deterministic hashtags for a topic video, minimal so all three the
     YouTube shows above the title carry weight: a format-specific reach tag
     (#Shorts vertical / #Highlights horizontal), a CamelCase tag of the topic's
-    key words, then #CuriosidadesFutbol and #Mundial2026. No team/scorer tags
-    (there is no match)."""
+    key words, then #CuriosidadesFutbol and the channel's competition tag. No
+    team/scorer tags (there is no match)."""
     lead = "#Shorts" if is_short else "#Highlights"
     tags = [lead]
     # A CamelCase tag from the first few significant words of the topic.
@@ -864,7 +900,7 @@ def build_topic_tags(topic: str, *, is_short: bool = True) -> list[str]:
                                   "the", "of", "a", "an", "new", "nuevas", "nuevo"}]
     if words:
         tags.append(_hashtag(" ".join(words[:4])))
-    tags += ["#CuriosidadesFutbol", "#Mundial2026"]
+    tags += ["#CuriosidadesFutbol", competitions.tags_for(competition)[0]]
     seen, out = set(), []
     for t in tags:
         if t and t not in seen:
@@ -875,41 +911,50 @@ def build_topic_tags(topic: str, *, is_short: bool = True) -> list[str]:
 
 def _hashtag(text: str) -> str:
     """Turn a name into a CamelCase hashtag: 'Real Madrid' -> '#RealMadrid'.
+
     Accents are stripped ('Türkiye' -> '#Turkiye', 'Curaçao' -> '#Curacao'):
     YouTube ends a hashtag link at the first non-ASCII character, so a diacritic
-    would break the tag in half."""
+    would break the tag in half. Punctuation is dropped for the same reason —
+    an amateur club's official name is full of it ("Pª REC.SAN FELIU") and a
+    literal '#PªRec.sanFeliu' is a broken link, not a tag.
+    """
     import unicodedata
     folded = "".join(c for c in unicodedata.normalize("NFD", text)
                      if not unicodedata.combining(c))
-    parts = "".join(w.capitalize() for w in folded.replace("-", " ").split())
+    # Anything that isn't a letter or digit becomes a word break, so each
+    # remaining chunk can be capitalised into the CamelCase tag.
+    words = re.split(r"[^0-9A-Za-z]+", folded)
+    parts = "".join(w[:1].upper() + w[1:] for w in words if w)
     return f"#{parts}" if parts else ""
 
 
 def build_tags(match: Match, *, is_short: bool = True) -> list[str]:
     """Four deterministic hashtags, deliberately minimal so all three YouTube
-    shows above the title carry weight: a format-specific reach tag, then
-    #FIFAWorldCup, then the two countries in SPANISH with the WINNER first.
+    shows above the title carry weight: a format-specific reach tag, then the
+    COMPETITION tag, then the two teams with the WINNER first.
     The lead tag is #Shorts for a vertical upload (its mandatory tag) or
     #Highlights for the horizontal cut (#Shorts is ignored off-vertical, and
-    #Highlights is what fans search for a full recap). #FIFAWorldCup is the
-    single biggest World-Cup-specific tag (top reach + topical precision, an
-    official YouTube×FIFA tag); the countries are the highest-intent search
-    terms a fan actually types. We do NOT emit a combined matchup mashword
-    (#BrasilAlemania) — unreadable and unsearched — nor scorer/fan/brand/generic
-    spam: past the visible cap they never show and only dilute the topical signal.
-    The winner goes into the third (last visible) slot: 'Brasil' lands on the
-    chip a fan sees the night their team won. On a draw or unknown score we keep
-    home-then-away order."""
-    # Country names in Spanish (#Brasil #Alemania), accent-stripped by _hashtag
-    # because YouTube ends a hashtag link at the first non-ASCII char.
-    home_tag = _hashtag(_team_es(match.home))
-    away_tag = _hashtag(_team_es(match.away))
+    #Highlights is what fans search for a full recap). The competition tag comes
+    from the match's own league via the preset (#LaLiga, #FIFAWorldCup) — the
+    biggest competition-specific term, with top reach and topical precision;
+    the teams are the highest-intent search terms a fan actually types. We do
+    NOT emit a combined matchup mashword (#BarcelonaMadrid) — unreadable and
+    unsearched — nor scorer/fan/brand/generic spam: past the visible cap they
+    never show and only dilute the topical signal. The winner goes into the
+    third (last visible) slot: '#RealMadrid' lands on the chip a fan sees the
+    night their team won. On a draw or unknown score we keep home-then-away
+    order."""
+    # Nations in Spanish (#Brasil), clubs under the label fans search
+    # (#RealMadrid). Accent-stripped by _hashtag, because YouTube ends a hashtag
+    # link at the first non-ASCII char.
+    home_tag = _hashtag(_team_tag(match.home))
+    away_tag = _hashtag(_team_tag(match.away))
     # Winner first: it claims the third (last visible) chip above the title.
     hg, ag = match.home_goals or 0, match.away_goals or 0
-    country_tags = [away_tag, home_tag] if ag > hg else [home_tag, away_tag]
+    team_tags = [away_tag, home_tag] if ag > hg else [home_tag, away_tag]
 
     lead = "#Shorts" if is_short else "#Highlights"
-    tags = [lead, "#FIFAWorldCup"] + country_tags
+    tags = [lead, competitions.tags_for(match.competition)[0]] + team_tags
     # Dedupe preserving order, drop empties.
     seen, out = set(), []
     for t in tags:
@@ -919,19 +964,19 @@ def build_tags(match: Match, *, is_short: bool = True) -> list[str]:
     return out
 
 
-def build_digest_tags(*, is_short: bool = False) -> list[str]:
-    """Four hashtags for a daily DIGEST, kept minimal so all of the three YouTube
-    shows above the title carry weight. A format-specific reach tag leads:
-    #Shorts for the vertical reel, #Highlights for the horizontal long cut
+def build_digest_tags(competition: str = "", *, is_short: bool = False) -> list[str]:
+    """Four hashtags for a matchday DIGEST, kept minimal so all of the three
+    YouTube shows above the title carry weight. A format-specific reach tag
+    leads: #Shorts for the vertical reel, #Highlights for the horizontal long cut
     (YouTube ignores #Shorts on a non-vertical video, and #Highlights is the
-    term fans search for a full recap). Then #FIFAWorldCup (biggest World-Cup-
-    specific tag, official YouTube×FIFA tag), #Mundial2026 (the year-specific tag
-    the Spanish audience searches), #Resumen (the day's-recap search term).
-    A digest spans several games with no single winner, so unlike a match Short
-    we don't rank countries — a flat competition+recap stack is what people
-    actually search."""
+    term fans search for a full recap). Then the competition's own tags from its
+    preset (#LaLiga / #FIFAWorldCup #Mundial2026 — the biggest competition-
+    specific terms the Spanish audience searches), and #Resumen (the recap
+    search term). A digest spans several games with no single winner, so unlike
+    a match Short we don't rank teams — a flat competition+recap stack is what
+    people actually search."""
     lead = "#Shorts" if is_short else "#Highlights"
-    tags = [lead, "#FIFAWorldCup", "#Mundial2026", "#Resumen"]
+    tags = [lead, *competitions.tags_for(competition), "#Resumen"]
     # Dedupe preserving order, drop empties.
     seen, out = set(), []
     for t in tags:
@@ -945,12 +990,23 @@ _TITLE_MAX = 90  # YouTube hard limit
 
 
 def _title_es(title: str) -> str:
-    """Force any English country name in a title to its Spanish form, so the
-    title never mixes languages no matter what the model returned."""
-    for en, es in _TEAMS_ES.items():
+    """Force any English country name — and any oddly-labelled club — in a title
+    to its Spanish form, so the title never mixes languages no matter what the
+    model returned. Longest source name first: rewriting 'Racing Santander'
+    before a shorter overlapping key can't then be half-matched by it."""
+    for en, es in sorted({**_TEAMS_ES, **_CLUBS_ES}.items(),
+                         key=lambda kv: -len(kv[0])):
         if en != es:
             title = re.sub(rf"\b{re.escape(en)}\b", es, title)
     return title
+
+
+# A trailing competition hashtag the model sometimes appends to the title. The
+# title carries none — they live in the tags/description — so any known
+# competition tag is stripped, not just the World Cup's.
+_TRAILING_TAG_RE = re.compile(
+    r"\s*\|?\s*#?\s*(?:Mundial\s*2026|FIFAWorldCup|LaLiga|La\s*Liga|"
+    r"LaLigaHypermotion|CopaDelRey|ChampionsLeague|EuropaLeague)\s*$", re.I)
 
 
 def _finalise_title(raw_title: str, match: Match) -> str:
@@ -958,7 +1014,7 @@ def _finalise_title(raw_title: str, match: Match) -> str:
     live in the tags/description, never in the title itself."""
     body = _title_es((raw_title or "").strip()) or _scoreline_es(match.scoreline)
     # Strip any trailing hashtag the model may have added — the title carries none.
-    body = re.sub(r"\s*\|?\s*#?\s*Mundial\s*2026\s*$", "", body, flags=re.I).rstrip(" |")
+    body = _TRAILING_TAG_RE.sub("", body).rstrip(" |")
     return body[:_TITLE_MAX].rstrip(" ,–-|")
 
 
