@@ -14,15 +14,23 @@
 set -euo pipefail
 
 LABEL="com.f88ball.scheduler"
-PROJECT_DIR="/Users/rup/Documents/DevelopmentLocal/F88tball"
+# Locate the project from this script's own path (scripts/..) so a moved repo
+# keeps working without editing hardcoded paths.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SRC_PLIST="$PROJECT_DIR/scripts/$LABEL.plist"
 DEST_PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-LOG="$PROJECT_DIR/profiles/worldcup_es/output/logs/scheduler.log"
+# Logs live under ~/Library/Logs (NOT ~/Documents): the Documents tree is
+# TCC-protected and launchd can be denied opening a log file there, which kills
+# the agent at spawn with EX_CONFIG (78) and no output.
+LOG="$HOME/Library/Logs/f88ball/scheduler.log"
 
 case "${1:-status}" in
   install)
     mkdir -p "$HOME/Library/LaunchAgents" "$(dirname "$LOG")"
-    cp "$SRC_PLIST" "$DEST_PLIST"
+    # Render the plist template with the project's real location so launchd's
+    # ProgramArguments/WorkingDirectory always point at wherever the repo lives.
+    sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" "$SRC_PLIST" > "$DEST_PLIST"
     launchctl unload "$DEST_PLIST" 2>/dev/null || true
     launchctl load "$DEST_PLIST"
     echo "✅ Installed and started. Runs in the background (even if you close the IDE)."

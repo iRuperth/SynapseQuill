@@ -40,11 +40,20 @@ class Card:
     team: str
     minute: str
     color: str           # "Yellow" or "Red"
+    reason: str = ""     # why it was shown, e.g. "a bad foul" (from ESPN); the
+    #                      narrator may state this ONLY because it is a fact,
+    #                      never invented. Empty when the provider gives no cause.
+    second_yellow: bool = False  # a Red that came from a SECOND booking (double
+    #                      yellow). The timeline draws a 'yellow+yellow -> red'
+    #                      icon for it and the narrator says 'doble amarilla'.
 
 
 @dataclass
 class Match:
-    fixture_id: int
+    # int for a single provider; a namespaced "<leg>-<id>" string when the feed
+    # merges several providers (data_sources/multi.py), so ids from unrelated
+    # databases can't collide and a lookup can be routed back to its source.
+    fixture_id: int | str
     status: str
     home: str
     away: str
@@ -64,6 +73,16 @@ class Match:
     # provider exposes it (ESPN does). None when there was no shootout.
     home_pens: int | None = None
     away_pens: int | None = None
+    # Optional ESPN enrichment for a richer, still-factual narration. Both are
+    # best-effort (empty when the provider gives nothing) and are passed to the
+    # narrator as facts, never invented.
+    #   stats: {team_name: {"possession": 53.0, "shots": 11, "shots_on": 5,
+    #                       "corners": 6, "fouls": 12}} — from ESPN boxscore.
+    #   notes: short factual play-by-play notes the keyEvents miss (VAR
+    #          overturns, goals off the post/bar, missed penalties), each
+    #          "minute · text", already in chronological order.
+    stats: dict = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)
 
     @property
     def is_finished(self) -> bool:

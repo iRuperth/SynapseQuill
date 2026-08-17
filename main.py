@@ -1,18 +1,22 @@
 """
 main.py — F88tball CLI entrypoint.
 
+The profile picks the competition (laliga_es -> LaLiga, worldcup_es -> the
+World Cup), so the same commands cover any of them.
+
 Usage:
     # Generate a video for one finished match now
-    python main.py --profile worldcup_es --match 12345
+    python main.py --profile laliga_es --match 401882920
 
-    # List today's World Cup fixtures for a profile
-    python main.py --profile worldcup_es --fixtures
+    # List the profile's fixtures (today's, or the latest finished)
+    python main.py --profile laliga_es --fixtures
 
-    # Run the auto-monitor: poll API-Football and generate videos as matches finish
-    python main.py --profile worldcup_es --scheduler --interval 90
+    # Run the auto-monitor: poll the data source and generate videos as
+    # matches finish, plus the recap when a whole matchday wraps up
+    python main.py --profile laliga_es --scheduler --interval 90
 
     # Print a short report of generated content
-    python main.py --profile worldcup_es --report
+    python main.py --profile laliga_es --report
 """
 
 import argparse
@@ -36,7 +40,7 @@ def cmd_fixtures(cfg: BrandProfile):
         print(f"  [{m.status:>14}] {m.fixture_id}  {m.scoreline}")
 
 
-def cmd_match(cfg: BrandProfile, fixture_id: int, upload: bool, social: bool):
+def cmd_match(cfg: BrandProfile, fixture_id: str, upload: bool, social: bool):
     result = run_fixture_id(cfg.id, fixture_id, do_video=True,
                            do_upload=upload, do_social=social)
     print(json.dumps({k: v for k, v in result.items() if k != "social"},
@@ -55,35 +59,50 @@ def cmd_report(cfg: BrandProfile):
 _DIGEST_FORMAT = "youtube"
 
 
-# How many past days to look back over for an unbuilt digest. A World Cup
-# plays every day, so the digest is daily: each day with fixtures, once all of
-# them have finished, becomes its own recap. The window lets a day that was
-# missed while still in progress still get its digest a day or two later.
-_DIGEST_LOOKBACK_DAYS = 4
+# How many past days to look back over for an unbuilt digest. The window lets a
+# round that was missed while still in progress still get its recap a few days
+# later. A league jornada can run Friday to Monday, so the look-back has to
+# outreach a whole round or the Friday games would age out before Monday's
+# kick-off closes the round.
+_DIGEST_LOOKBACK_DAYS = 8
 
 
 def _maybe_run_digest(cfg: BrandProfile, source, upload: bool):
-    """Build the DAILY digest for every recent day whose fixtures have all
-    finished. The World Cup plays every day, so the recap is per day: a day
-    that had games and has them ALL finished becomes its own digest. Today is
-    excluded so a day is only summarised once it is fully played. The digest's
-    own record file marks a day as done, so it never re-generates."""
+    """Build the digest for every recent ROUND whose fixtures have all finished.
+
+    What counts as a round comes from the competition preset: a World Cup day is
+    its own recap, while a LaLiga jornada spans Friday to Monday and must be ONE
+    recap. So each candidate day is first resolved to its round, and the round is
+    keyed by its first day — every day of a jornada maps to the same record file,
+    which is what stops a four-day round from producing four near-identical
+    digests. Today is excluded so a round is only summarised once fully played,
+    and the record file marks it done so it never re-generates."""
     from datetime import date, timedelta
 
-    from pipeline.digest import run_daily_digest
+    from core import competitions
+    from pipeline.digest import matchday_days, run_daily_digest
 
-    # Oldest first, so missed days are filled in chronological order. Skip today
-    # (offset 0): its games may still be in progress.
+    mode = competitions.digest_mode(cfg.COMPETITION)
+    built: set[str] = set()
+    # Oldest first, so missed rounds are filled in chronological order. Skip
+    # today (offset 0): its games may still be in progress.
     for offset in range(_DIGEST_LOOKBACK_DAYS, 0, -1):
         d = date.today() - timedelta(days=offset)
-        day = d.isoformat()
-        if (cfg.CONTENT_DIR / f"digest_{day}_{_DIGEST_FORMAT}.json").exists():
+        days = matchday_days(source, d.isoformat(), mode)
+        anchor = days[0]
+        if anchor in built:
+            continue                            # same round, already handled
+        built.add(anchor)
+        if (cfg.CONTENT_DIR / f"digest_{anchor}_{_DIGEST_FORMAT}.json").exists():
             continue                            # already built
-        fixtures = source.fixtures_on(day)
+        # A round is only ready when EVERY day of it has games and all of them
+        # have finished — including a Monday-night closer still in progress.
+        fixtures = [m for day in days for m in source.fixtures_on(day)]
         if not fixtures or not all(m.is_finished for m in fixtures):
             continue                            # no games / still playing
-        print(f"[scheduler] {day} complete ({len(fixtures)} matches) — building the digest...")
-        run_daily_digest(cfg.id, day, _DIGEST_FORMAT, upload=upload or None,
+        print(f"[scheduler] round {anchor} complete ({len(fixtures)} matches) "
+              f"over {len(days)} day(s) — building the digest...")
+        run_daily_digest(cfg.id, anchor, _DIGEST_FORMAT, upload=upload or None,
                          on_step=lambda step, msg: print(f"[digest:{step}] {msg}"))
 
 
@@ -115,9 +134,11 @@ def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
 
 
 def main():
-    p = argparse.ArgumentParser(description="F88tball — World Cup highlight generator")
+    p = argparse.ArgumentParser(description="F88tball — football highlight generator")
     p.add_argument("--profile", help="profile id under profiles/")
-    p.add_argument("--match", type=int, help="generate a video for this fixture id")
+    # str, not int: a merged feed namespaces ids as "<leg>-<id>", e.g.
+    # --match laliga-401882920. A plain numeric id still works.
+    p.add_argument("--match", help="generate a video for this fixture id")
     p.add_argument("--fixtures", action="store_true", help="list today's fixtures")
     p.add_argument("--scheduler", action="store_true",
                    help="auto-generate as matches finish + the digest when the matchday ends")

@@ -77,7 +77,10 @@ _lock = threading.Lock()
 
 # ── Request models ───────────────────────────────────────────────────
 class GenerateRequest(BaseModel):
-    fixture_id: int
+    # str, not int: a merged feed namespaces ids as "<leg>-<id>"
+    # ("laliga-401882920"), so an int model would reject every id the
+    # LaLiga + Rōnin channel serves. Plain numeric ids still parse.
+    fixture_id: str
     do_video: bool = True
     do_upload: bool = False
     do_social: bool = False
@@ -87,7 +90,7 @@ class GenerateRequest(BaseModel):
 class DigestRequest(BaseModel):
     day: str | None = None        # YYYY-MM-DD, default = latest matchday
     format: str = "youtube"       # youtube (horizontal) | reel (vertical)
-    fixture_ids: list[int] | None = None   # selected matches; None = whole matchday
+    fixture_ids: list[str] | None = None   # selected matches; None = whole matchday
     brief: str = ""               # free-form angle for the intro/outro
 
 
@@ -343,7 +346,7 @@ def get_video(profile_id: str, name: str):
 
 
 class PublishRequest(BaseModel):
-    fixture_id: int
+    fixture_id: str                 # namespaced on a merged feed ("laliga-401882920")
     privacy: str = "private"        # private | unlisted | public
 
 

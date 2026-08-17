@@ -117,6 +117,11 @@ class BrandProfile:
         # TheSportsDB league id (World Cup = 4429) may come from the preset.
         self._tsdb_league = (preset.get("tsdb_league")
                              or self._env_get("THESPORTSDB_LEAGUE", "4429"))
+        # A "multi" competition is several feeds merged into one channel (every
+        # LaLiga match PLUS one club followed wherever it plays). Each leg names
+        # its own provider and ids; an empty list means a single-source
+        # competition, which is every other preset.
+        self.COMPETITION_LEGS = list(preset.get("legs") or [])
         if not self.COMPETITION:
             self.COMPETITION = _DEFAULT_COMP
 
@@ -154,10 +159,13 @@ class BrandProfile:
         self.MEDIA_SOURCES = sources
         self.IMAGE_PROVIDER = media.get("image_provider", self._env_get("IMAGE_PROVIDER", "pollinations"))
         self.VISUAL_STYLE = j.get("style", {}).get("visual_style", "cinematic sports broadcast")
-        # Competition logo drawn bottom-right of every video. Swap the whole
-        # tournament by pointing this at another file (World Cup -> La Liga).
+        # Competition logo drawn on every video. The PRESET owns it, so picking
+        # "La Liga" in the UI swaps the corner logo with the data source — no
+        # second setting to remember. An explicit profile/env value still wins,
+        # for a channel that wants its own artwork.
         self.COMPETITION_LOGO = (j.get("style", {}).get("competition_logo")
-                                 or self._env_get("COMPETITION_LOGO", ""))
+                                 or self._env_get("COMPETITION_LOGO", "")
+                                 or preset.get("logo", ""))
 
         # --- YouTube publish ---
         self.PRACTICE_MODE = str(self._env_get("PRACTICE_MODE", "true")).lower() == "true"

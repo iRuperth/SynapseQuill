@@ -7,8 +7,18 @@ concrete colour/flag cues well but cannot render accurate crests/logos, so we
 describe nationality + jersey colours + flag colours, never badges.
 
 TEAM_PALETTE maps a team name to a short "colour + flag" descriptor. Covers the
-main World Cup nations and La Liga clubs; unknown teams degrade gracefully.
-A deterministic per-team seed keeps the same team looking consistent over time.
+LaLiga (Primera + Hypermotion) clubs and the main World Cup nations; unknown
+teams degrade gracefully. A deterministic per-team seed keeps the same team
+looking consistent over time.
+
+Why no crests, verified rather than assumed: FLUX.1-schnell was probed directly
+with club names and no visual hints. It approximates only the two mega-clubs
+(a Real Madrid badge came back recognisable but with a garbled monogram) and
+INVENTS a badge for everyone else — Rayo Vallecano came back as a striped shield
+with no lightning bolt, Racing de Santander as a green shield reading "EAL
+RACING CLUB". A wrong crest is worse than none, so the real, official crests
+come from ESPN's own artwork (animated_graphics.py composites them onto the
+scoreboard) and the AI backdrop stays badge-free.
 """
 
 import zlib
@@ -74,7 +84,10 @@ TEAM_PALETTE = {
     "Curaçao": "blue jerseys, Curaçao flags (blue with yellow stripe and white stars)",
     "Curacao": "blue jerseys, Curaçao flags (blue with yellow stripe and white stars)",
     "Haiti": "blue and red jerseys, Haitian flags (blue and red)",
-    # ── La Liga clubs ──
+    # ── LaLiga clubs (the 2026/27 Primera field first, then the sides that
+    #    move between Primera and Hypermotion, so a promotion needs no edit) ──
+    #    Keys match ESPN's displayName, which is what a Match carries; the
+    #    accent-free spelling is kept alongside for any source that drops them.
     "Real Madrid": "all-white jerseys, white and purple banners",
     "Barcelona": "blue and garnet (blaugrana) striped jerseys, Catalan banners",
     "Atlético Madrid": "red and white striped jerseys, red and white banners",
@@ -85,9 +98,7 @@ TEAM_PALETTE = {
     "Valencia": "white jerseys with orange and black, Valencia banners",
     "Athletic Club": "red and white striped jerseys, Basque banners",
     "Real Sociedad": "blue and white striped jerseys, blue banners",
-    "Girona": "red and white striped jerseys, red banners",
     "Rayo Vallecano": "white jerseys with a red diagonal stripe, red banners",
-    "Mallorca": "red and black jerseys, red banners",
     "Osasuna": "red jerseys, red 'rojillos' banners",
     "Celta Vigo": "sky-blue jerseys, light-blue banners",
     "Getafe": "blue jerseys, blue banners",
@@ -95,14 +106,46 @@ TEAM_PALETTE = {
     "Alaves": "blue and white striped jerseys, blue banners",
     "Levante": "blue and garnet jerseys, blue banners",
     "Espanyol": "blue and white striped jerseys, blue banners",
+    "Elche": "green and white jerseys, green banners",
+    # Promoted for 2026/27.
+    "Racing Santander": "green and white striped jerseys, green and white banners",
+    "Deportivo": "sky-blue and white jerseys, blue banners",
+    "Málaga": "blue and white striped jerseys, blue banners",
+    "Malaga": "blue and white striped jerseys, blue banners",
+    # Currently in Hypermotion — kept so a promotion or a cup tie is covered.
+    "Girona": "red and white striped jerseys, red banners",
+    "Mallorca": "red and black jerseys, red banners",
     "Las Palmas": "yellow and blue jerseys, yellow banners",
     "Real Oviedo": "blue jerseys, blue banners",
-    "Elche": "green and white jerseys, green banners",
     "Leganés": "blue and white jerseys, blue banners",
     "Leganes": "blue and white jerseys, blue banners",
+    "Real Valladolid": "violet and white striped jerseys, violet banners",
     "Valladolid": "violet and white striped jerseys, violet banners",
     "Cádiz": "yellow jerseys, yellow banners",
     "Cadiz": "yellow jerseys, yellow banners",
+    "Granada": "red and white striped jerseys, red banners",
+    "Eibar": "blue and maroon striped jerseys, blue banners",
+    "Tenerife": "white and blue jerseys, blue banners",
+    "Castellón": "black and white striped jerseys, black banners",
+    "Castellon": "black and white striped jerseys, black banners",
+    "Burgos": "white and black jerseys, white banners",
+    "Córdoba": "white and green jerseys, green banners",
+    "Cordoba": "white and green jerseys, green banners",
+    "Ceuta": "white and red jerseys, red banners",
+    "FC Andorra": "red and yellow jerseys, red and yellow banners",
+    "Andorra": "red and yellow jerseys, red and yellow banners",
+    "Huesca": "blue and red striped jerseys, blue banners",
+    "Almería": "red and white jerseys, red banners",
+    "Almeria": "red and white jerseys, red banners",
+    "Sporting Gijón": "red and white striped jerseys, red banners",
+    "Sporting Gijon": "red and white striped jerseys, red banners",
+    "Zaragoza": "white jerseys with blue, blue banners",
+    "Racing Ferrol": "green and white striped jerseys, green banners",
+    "Albacete": "white jerseys, white banners",
+    "Mirandés": "red and black striped jerseys, red banners",
+    "Mirandes": "red and black striped jerseys, red banners",
+    "Real Sociedad II": "blue and white striped jerseys, blue banners",
+    "RC Celta Fortuna": "sky-blue jerseys, light-blue banners",
 }
 
 
@@ -201,8 +244,9 @@ def crowd_prompt(team: str, visual_style: str, vertical: bool = True) -> str:
     return (
         f"{visual_style}, photorealistic {_CLOSEUP}, {fans} at night "
         f"waving MANY large {palette(team)}, raised scarves and big plain "
-        f"solid-colour flags filling the frame, flares and confetti, vibrant "
-        f"colours, {comp}, {_NO_TEXT}"
+        f"solid-colour flags filling the frame, colourful confetti and "
+        f"streamers, no smoke, no flares, no fire, vibrant colours, {comp}, "
+        f"{_NO_TEXT}"
     )
 
 
@@ -213,8 +257,9 @@ def generic_crowd_prompt(visual_style: str, vertical: bool = True) -> str:
     return (
         f"{visual_style}, photorealistic {_CLOSEUP}, ecstatic fans at night "
         f"waving many large solid-colour flags and raised scarves in MIXED team "
-        f"colours, supporters in shirts of several different teams, flares and "
-        f"confetti, vibrant colours, {comp}, {_NO_TEXT}"
+        f"colours, supporters in shirts of several different teams, colourful "
+        f"confetti and streamers, no smoke, no flares, no fire, vibrant "
+        f"colours, {comp}, {_NO_TEXT}"
     )
 
 

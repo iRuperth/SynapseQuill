@@ -1,0 +1,24 @@
+{
+  "name": "LaLiga + Rōnin FC — Resúmenes",
+  "team": "Rōnin FC",
+  "language": "es",
+  "voice": {
+    "preset": ""
+  },
+  "media": {},
+  "style": {
+    "visual_style": "cinematic sports broadcast, vibrant, dramatic lighting"
+  },
+  "persona": {
+    "description": "Energetic, passionate football broadcaster covering LaLiga and every Rōnin FC match.",
+    "tone": "exciting, emotional, vivid",
+    "values": "accuracy of scores and scorers above all"
+  },
+  "competition": {
+    "preset": "laliga_ronin"
+  },
+  "youtube": {
+    "auto_upload": false,
+    "playlist_id": ""
+  }
+}
