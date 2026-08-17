@@ -50,7 +50,10 @@ class Card:
 
 @dataclass
 class Match:
-    fixture_id: int
+    # int for a single provider; a namespaced "<leg>-<id>" string when the feed
+    # merges several providers (data_sources/multi.py), so ids from unrelated
+    # databases can't collide and a lookup can be routed back to its source.
+    fixture_id: int | str
     status: str
     home: str
     away: str

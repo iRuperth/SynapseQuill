@@ -36,7 +36,7 @@ def cmd_fixtures(cfg: BrandProfile):
         print(f"  [{m.status:>14}] {m.fixture_id}  {m.scoreline}")
 
 
-def cmd_match(cfg: BrandProfile, fixture_id: int, upload: bool, social: bool):
+def cmd_match(cfg: BrandProfile, fixture_id: str, upload: bool, social: bool):
     result = run_fixture_id(cfg.id, fixture_id, do_video=True,
                            do_upload=upload, do_social=social)
     print(json.dumps({k: v for k, v in result.items() if k != "social"},
@@ -117,7 +117,9 @@ def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
 def main():
     p = argparse.ArgumentParser(description="F88tball — World Cup highlight generator")
     p.add_argument("--profile", help="profile id under profiles/")
-    p.add_argument("--match", type=int, help="generate a video for this fixture id")
+    # str, not int: a merged feed namespaces ids as "<leg>-<id>", e.g.
+    # --match laliga-401882920. A plain numeric id still works.
+    p.add_argument("--match", help="generate a video for this fixture id")
     p.add_argument("--fixtures", action="store_true", help="list today's fixtures")
     p.add_argument("--scheduler", action="store_true",
                    help="auto-generate as matches finish + the digest when the matchday ends")
