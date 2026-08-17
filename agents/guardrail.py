@@ -410,6 +410,39 @@ _JUDGE_SYS = (
 )
 
 
+# The judge runs on a REASONING model, which spends tokens thinking before it
+# answers. 300 was enough for the older non-reasoning judge but truncates a
+# reasoning one mid-thought: the completion then carries no `content`, the LLM
+# wrapper falls back to the `reasoning` text, and the judge "fails to parse" on
+# every single call — silently disabling this whole layer while `verify()` keeps
+# passing narrations on the facts check alone. The budget must clear the
+# reasoning plus the verdict.
+_JUDGE_MAX_TOKENS = 1200
+
+# Some models wrap their thinking in <think>…</think> and then answer; others
+# print prose and end with the JSON. Strip the think block, then take the LAST
+# balanced {...} — the last one is the verdict, since anything the model quotes
+# while reasoning comes earlier.
+_THINK_RE = re.compile(r"<think>.*?(?:</think>|$)", re.S | re.I)
+
+
+def _extract_json(raw: str) -> str:
+    """Pull the verdict object out of a reasoning model's reply."""
+    cleaned = _THINK_RE.sub(" ", raw or "").strip()
+    start, depth = None, 0
+    best = ""
+    for i, ch in enumerate(cleaned):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                best = cleaned[start:i + 1]      # keep the last complete object
+    return best or cleaned
+
+
 def llm_judge(match: Match, text: str, language: str, *, provider: str | None = None) -> dict:
     from pipeline.narrator import _facts_block
 
@@ -420,10 +453,10 @@ def llm_judge(match: Match, text: str, language: str, *, provider: str | None = 
     )
     raw = call_llm(
         [{"role": "system", "content": _JUDGE_SYS}, {"role": "user", "content": user}],
-        provider=provider, max_tokens=300, label="Guardrail",
+        provider=provider, max_tokens=_JUDGE_MAX_TOKENS, label="Guardrail",
     )
     try:
-        data = json.loads(repair_json(raw))
+        data = json.loads(repair_json(_extract_json(raw)))
         if not isinstance(data, dict) or "grounded" not in data:
             raise ValueError("judge returned no usable verdict")
     except Exception as e:
