@@ -97,16 +97,63 @@ def _stitch_with_crossfade(segments: list):
     return CompositeVideoClip(placed)
 
 
-def _matchday_window(source, day: str, on_step) -> list:
-    """All finished matches played ON `day`. The World Cup plays every day, so a
-    digest covers a single calendar day: its 3-4 fixtures become one recap. We
-    dedupe by fixture id and order by kickoff so the recap follows the day."""
-    on_step("fetch", f"Fetching matches on {day}")
+# How far either side of `day` a league round can reach. A LaLiga jornada opens
+# Friday and closes Monday, so three days of slack on each side covers it while
+# still stopping at the empty midweek that separates two rounds.
+_MATCHDAY_REACH = 3
+
+
+def matchday_days(source, day: str, mode: str = "matchday") -> list[str]:
+    """The calendar days that make up the round `day` belongs to, ascending.
+
+    mode="daily"    — the calendar day IS the round. The World Cup plays every
+                      day, so its 3-4 fixtures make one recap.
+    mode="matchday" — a league jornada spans several days (LaLiga: Friday to
+                      Monday). Treating each day as its own round would chop one
+                      jornada into three thin recaps that each claim to be "la
+                      jornada", so we walk outwards from `day` while consecutive
+                      days still have fixtures and stop at the first empty one —
+                      the midweek gap that separates rounds.
+
+    The FIRST element is the round's anchor: every day of a round resolves to the
+    same list, so callers can key a round by days[0] and build it exactly once.
+    """
+    from datetime import date as _date
+    from datetime import timedelta
+
+    if mode == "daily":
+        return [day]
+    try:
+        d0 = _date.fromisoformat(day)
+    except ValueError:
+        return [day]
+    # A day with no fixtures belongs to no round. Without this it would still
+    # absorb its neighbours and anchor a round on an empty midweek day, and that
+    # round would then be built a SECOND time under its real first day.
+    if not source.fixtures_on(day):
+        return [day]
+
+    days = {day}
+    for step in (-1, 1):                        # backwards, then forwards
+        for n in range(1, _MATCHDAY_REACH + 1):
+            d = (d0 + timedelta(days=step * n)).isoformat()
+            if not source.fixtures_on(d):
+                break                           # empty day -> edge of the round
+            days.add(d)
+    return sorted(days)
+
+
+def _matchday_window(source, day: str, on_step, *, mode: str = "matchday") -> list:
+    """All finished matches of the round `day` belongs to, deduped by fixture id
+    and ordered by kickoff so the recap follows the round."""
+    days = matchday_days(source, day, mode)
+    on_step("fetch", f"Fetching matches on {', '.join(days)}")
     seen, out = set(), []
-    for m in source.fixtures_on(day):
-        if m.is_finished and m.fixture_id not in seen:
-            seen.add(m.fixture_id)
-            out.append(m)
+    for d in days:
+        for m in source.fixtures_on(d):
+            if m.is_finished and m.fixture_id not in seen:
+                seen.add(m.fixture_id)
+                out.append(m)
     out.sort(key=lambda m: (m.date or "", m.kickoff or ""))
     return out
 
@@ -135,10 +182,15 @@ def _readable_day_dm(day: str) -> str:
         return day
 
 
-def _digest_title(day: str) -> str:
-    """Generic YouTube title for the day's recap, e.g.
-    'Resumen de la jornada del 11 de junio del Mundial de Fútbol 2026'."""
-    return f"Resumen de la jornada del {_readable_day_dm(day)} del Mundial de Fútbol 2026"
+def _digest_title(day: str, competition: str = "") -> str:
+    """Generic YouTube title for the round's recap, e.g. 'Resumen de la jornada
+    del 15 de agosto de LaLiga'. The competition is named from its preset, so
+    the title follows whatever the channel covers; an unknown competition simply
+    drops the suffix rather than claiming the wrong one."""
+    from core import competitions
+    head = f"Resumen de la jornada del {_readable_day_dm(day)}"
+    tail = competitions.of_name_es(competition)
+    return f"{head} {tail}" if tail else head
 
 
 def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
@@ -160,12 +212,19 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
     if fixture_ids:
         # Manual selection: just the chosen matches (any day), in the given order.
         on_step("fetch", f"Fetching {len(fixture_ids)} selected matches")
-        wanted = {int(f) for f in fixture_ids}
+        # Compared as strings: a merged feed namespaces ids ("laliga-401882920"),
+        # so int() would raise on every id the LaLiga + Rōnin channel serves.
+        wanted = {str(f) for f in fixture_ids}
         finished = [source.fixture(fid) for fid in fixture_ids]
-        finished = [m for m in finished if m and m.is_finished and m.fixture_id in wanted]
+        finished = [m for m in finished
+                    if m and m.is_finished and str(m.fixture_id) in wanted]
     else:
-        # Automatic: the whole matchday around `day`.
-        finished = _matchday_window(source, day, on_step)
+        # Automatic: the whole matchday around `day`. How wide that is depends
+        # on the competition — a league jornada spans Friday to Monday, a World
+        # Cup day is its own round.
+        from core import competitions
+        finished = _matchday_window(source, day, on_step,
+                                    mode=competitions.digest_mode(cfg.COMPETITION))
     if not finished:
         return {"status": "empty", "message": f"No finished matches for {day}"}
 
@@ -241,11 +300,12 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         s.close()
     digest.close()
 
-    # Digest hashtags: a minimal #FIFAWorldCup #Mundial2026 #Resumen stack, led
-    # by a format-specific reach tag — #Shorts for the vertical reel cut,
-    # #Highlights for the horizontal long cut (YouTube ignores #Shorts on a
-    # non-vertical video, and #Highlights is what people search for full recaps).
-    tags = build_digest_tags(is_short=(fmt.key == "reel"))
+    # Digest hashtags: a minimal <competition> + #Resumen stack (#LaLiga for a
+    # league round, #FIFAWorldCup #Mundial2026 for a World Cup day), led by a
+    # format-specific reach tag — #Shorts for the vertical reel cut, #Highlights
+    # for the horizontal long cut (YouTube ignores #Shorts on a non-vertical
+    # video, and #Highlights is what people search for full recaps).
+    tags = build_digest_tags(cfg.COMPETITION, is_short=(fmt.key == "reel"))
 
     record = {
         "type": "digest", "day": day, "format": fmt.key,
@@ -269,7 +329,7 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         record["upload_skipped"] = "guardrail failed"
     elif cfg.AUTO_UPLOAD if upload is None else upload:
         on_step("upload", f"Uploading digest to YouTube ({cfg.YOUTUBE_PRIVACY})")
-        title = _digest_title(day)
+        title = _digest_title(day, cfg.COMPETITION)
         # Real text as the description — the uploader appends the hashtags
         # itself, so putting the tags here would print them twice (spam wall).
         scorelines = "\n".join(_scoreline_es(u["scoreline"]) for u in used)
