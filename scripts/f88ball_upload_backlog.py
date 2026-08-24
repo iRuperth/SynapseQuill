@@ -20,6 +20,7 @@ Why this exists rather than a loop around upload_content():
 """
 
 import argparse
+import fcntl
 import json
 import sys
 import time
@@ -70,19 +71,33 @@ def _match_dates(cfg: BrandProfile, content_ids: list[str]) -> dict:
     return out
 
 
+_ROUND_END_CACHE: dict = {}
+
+
 def _round_end(cfg: BrandProfile, day: str) -> str:
-    """Last calendar day of the round that opens on `day`."""
+    """Last calendar day of the round that opens on `day`.
+
+    Memoised because it is not cheap and it is asked repeatedly: sorting calls
+    the key function per element and the listing prints it again, and each miss
+    fans out to a week of fixture lookups across ESPN AND the roninfc.fans
+    supporters site — which is a small community server the data source politely
+    rate-limits, not an API to hammer once per sort comparison.
+    """
     if not day:
         return ""
+    if day in _ROUND_END_CACHE:
+        return _ROUND_END_CACHE[day]
     try:
         from core import competitions
         from pipeline.data_sources import get_data_source
         from pipeline.digest import matchday_days
         days = matchday_days(get_data_source(cfg), day,
                              competitions.digest_mode(cfg.COMPETITION))
-        return max(days) if days else day
+        end = max(days) if days else day
     except Exception:  # noqa: BLE001
-        return day      # a single-day round is the safe assumption
+        end = day       # a single-day round is the safe assumption
+    _ROUND_END_CACHE[day] = end
+    return end
 
 
 def _sort_key(cfg: BrandProfile, content_id: str, dates: dict):
@@ -120,6 +135,30 @@ def _is_quota_error(exc: Exception) -> bool:
             or "ratelimitexceeded" in text)
 
 
+def _acquire_lock(cfg: BrandProfile):
+    """Take an exclusive per-profile lock, or return None if a run is already up.
+
+    A pass over a full backlog takes about a quarter of an hour, so two runs
+    started minutes apart would overlap for almost all of it. Both would read the
+    same pending list before either finished a transfer, and both would publish —
+    two public copies of the same match, with the second overwriting the first's
+    URL so nothing is left pointing at the orphan. launchd will not start a
+    second copy of the same job, but that is not the only way a run starts: a
+    manual kickstart, the API's own upload worker, or someone running the script
+    by hand all bypass it. The lock is held by the process and released by the
+    kernel on exit, so a crash cannot leave it stuck.
+    """
+    lock_path = cfg.OUTPUT_DIR / ".upload.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(lock_path, "w")          # noqa: SIM115 — must outlive this call
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--profile", default="laliga_es")
@@ -132,6 +171,12 @@ def main() -> int:
     args = ap.parse_args()
 
     cfg = BrandProfile(args.profile)
+    lock = None
+    if not args.dry_run:                   # a dry run publishes nothing
+        lock = _acquire_lock(cfg)
+        if lock is None:
+            print("[upload] another upload run is already in progress — leaving it to finish")
+            return 0
     # The privacy the CALLER asked for wins. PRACTICE_MODE would otherwise force
     # every upload private, which would silently ignore an explicit --privacy.
     cfg.PRACTICE_MODE = False
