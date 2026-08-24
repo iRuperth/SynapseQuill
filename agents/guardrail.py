@@ -211,7 +211,14 @@ def _goal_type_issues(match: Match, text: str) -> list[str]:
     per-scorer check would false-flag it."""
     issues = []
     folded = _fold(text)
-    has_pen = any("Pen" in (g.kind or "") for g in match.goals)
+    # A penalty only becomes a GOAL when it is scored. One that is saved, missed
+    # or merely awarded lives in the event notes ("Penalty saved. Andrés Martín
+    # ... saved by David Soria"), and the facts block hands those to the narrator
+    # to narrate — so a narration that mentions them is being FAITHFUL. Reading
+    # goals alone flagged that as an invented penalty and burned all three
+    # regeneration attempts on prose that was right the first time.
+    has_pen = (any("Pen" in (g.kind or "") for g in match.goals)
+               or any(_PEN_WORDS.search(_fold(n)) for n in (match.notes or [])))
     has_own = any("Own" in (g.kind or "") for g in match.goals)
     shootout = match.home_pens is not None or match.away_pens is not None
     # A NEGATED penalty ("el VAR revisa sin encontrar penal", "no fue penal", "no
