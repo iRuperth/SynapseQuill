@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd service that publishes generated videos to YouTube on a timer.
+  TEMPLATE: __PROJECT_DIR__ is substituted with the repo's real path at install
+  time (do not `cp` it directly or the placeholder won't be resolved).
+
+  StartInterval rather than KeepAlive: this job is meant to RUN AND EXIT. The
+  YouTube API allows roughly six uploads a day, so a process that stayed alive
+  would spend the day sleeping. Waking every few hours, publishing what the
+  quota permits and exiting is the honest shape for it, and it means a crash
+  costs one cycle rather than the whole backlog.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.f88ball.uploader</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__PROJECT_DIR__/scripts/f88ball_uploader.sh</string>
+    </array>
+
+    <!-- Every 4 hours: six runs a day against a ~6-upload daily quota, so the
+         backlog always drains as fast as YouTube permits without hammering. -->
+    <key>StartInterval</key>
+    <integer>14400</integer>
+
+    <!-- Run once at load too, so installing it starts publishing immediately
+         rather than four hours later. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+
+    <!-- Logs OUTSIDE ~/Documents: that tree is TCC-protected and launchd can be
+         denied opening a file there, which kills the job at spawn with
+         EX_CONFIG (78) and no output at all. -->
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/f88ball/uploader.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/f88ball/uploader.err.log</string>
+</dict>
+</plist>
