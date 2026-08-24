@@ -164,6 +164,12 @@ def run_match(profile_id: str, match: Match, *,
                                 provider=cfg.LLM_PROVIDER, feedback=reasons,
                                 is_short=(fmt.key == "reel"))
     result["metadata"] = meta
+    # Record the metadata verdict, not just the narration's. Detecting a bad
+    # description achieves nothing on its own: the loop above ships its last
+    # draft whether or not it passed, and the auto-upload gate below used to
+    # consult the narration verdict alone — so a description that failed all
+    # three attempts was published anyway, merely logged on the way out.
+    result["metadata_guardrail"] = meta_check
 
     # --- 3. Media + voice + video (Phase 2) --------------------------
     video_path = None
@@ -274,11 +280,17 @@ def run_match(profile_id: str, match: Match, *,
     # still generated and saved — it just waits for a manual upload/review.
     # An explicit do_upload (a human ran this on purpose) is honoured anyway.
     guardrail_failed = not result.get("guardrail", {}).get("passed", True)
-    block_auto = cfg.AUTO_UPLOAD and not do_upload and guardrail_failed
+    # The title and description are published text too, and they are checked by
+    # the deterministic layer ONLY (no judge, for cost) — so this gate is the
+    # only thing standing between a failed description and the channel.
+    meta_failed = not result.get("metadata_guardrail", {}).get("ok", True)
+    block_auto = (cfg.AUTO_UPLOAD and not do_upload
+                  and (guardrail_failed or meta_failed))
     if block_auto:
-        on_step("upload", "Skipped auto-upload: narration failed the guardrail "
+        which = "narration" if guardrail_failed else "title/description"
+        on_step("upload", f"Skipped auto-upload: {which} failed the guardrail "
                           "— left in the library for manual review")
-        result["upload_skipped"] = "guardrail failed"
+        result["upload_skipped"] = f"guardrail failed ({which})"
     elif (do_upload or cfg.AUTO_UPLOAD) and video_path:
         on_step("upload", f"Uploading to YouTube ({cfg.YOUTUBE_PRIVACY})")
         try:

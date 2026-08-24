@@ -88,8 +88,18 @@ def pending_uploads(cfg: BrandProfile) -> list[str]:
             rec = json.loads(f.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
-        if not rec.get("youtube_url"):
-            out.append(f.stem)
+        if rec.get("youtube_url"):
+            continue
+        # Never queue what a gate deliberately held back. Without this the
+        # uploader publishes exactly the records the guardrail refused to
+        # auto-publish, quietly undoing the decision that kept them back.
+        if rec.get("upload_skipped"):
+            continue
+        if rec.get("guardrail") and not rec["guardrail"].get("passed", True):
+            continue
+        if rec.get("metadata_guardrail") and not rec["metadata_guardrail"].get("ok", True):
+            continue
+        out.append(f.stem)
     return out
 
 
