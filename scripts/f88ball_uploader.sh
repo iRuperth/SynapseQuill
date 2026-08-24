@@ -23,9 +23,16 @@ PROFILE="${F88_PROFILE:-laliga_es}"
 # anyone can find it, and that cannot be undone from here.
 PRIVACY="${F88_PRIVACY:-public}"
 
-# Uploads per run. Kept under the ~6 the daily quota allows so a run ends by
-# choice rather than by hitting the API ceiling; the remainder goes out next run.
-LIMIT="${F88_UPLOAD_LIMIT:-5}"
+# Uploads per run. 0 means "keep going until YouTube says the quota is spent".
+#
+# This used to default to 5, reasoning that ~1600 quota units per upload against
+# a 10000/day allowance leaves room for about six. That was the DOCUMENTED
+# default for a Cloud project, not a measurement of this one, and it throttled
+# publishing for no reason — a run stopped at five while the API was still
+# happily accepting uploads. The quota is already handled properly one layer
+# down: an exhausted allowance ends the run cleanly and the next wake resumes.
+# So let the API be the authority on its own limit rather than guessing it here.
+LIMIT="${F88_UPLOAD_LIMIT:-0}"
 
 cd "$PROJECT_DIR"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
