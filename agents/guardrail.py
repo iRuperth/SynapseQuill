@@ -337,6 +337,44 @@ def _grammar_issues(text: str) -> list[str]:
 
 
 # ── Layer 1: deterministic facts check ───────────────────────────────
+# Number words, for reading a score the narrator wrote out in full. The
+# narrator SPELLS numbers on purpose — the text is fed to TTS, where "3-0" is
+# read unpredictably and "tres a cero" is not — so "Termina dos a cero" is the
+# expected shape of a final score, not an unusual one.
+_NUM_WORDS = {
+    # Spanish
+    "cero": 0, "uno": 1, "un": 1, "una": 1, "dos": 2, "tres": 3, "cuatro": 4,
+    "cinco": 5, "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10,
+    "once": 11, "doce": 12,
+    # English
+    "zero": 0, "nil": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12,
+}
+
+# Only ever rewrite a number word sitting in a SCORE-SHAPED pair. Substituting
+# every "un" in Spanish prose would turn "un disparo" into "1 disparo" and
+# manufacture score tokens that were never there — a false pass, which is far
+# worse than the false failure this fixes.
+_SCORE_PAIR_RE = re.compile(
+    rf"\b({'|'.join(sorted(_NUM_WORDS, key=len, reverse=True))}|\d{{1,2}})"
+    rf"\s*(?:[-:x]|\s(?:a|to)\s)\s*"
+    rf"({'|'.join(sorted(_NUM_WORDS, key=len, reverse=True))}|\d{{1,2}})\b",
+    re.IGNORECASE,
+)
+
+
+def _digitise_scores(text: str) -> str:
+    """Rewrite word-form scores ("dos a cero") as digits ("2-0") so the score
+    checks below see them. Digits already present are left untouched."""
+    def one(m):
+        a, b = m.group(1).lower(), m.group(2).lower()
+        a = _NUM_WORDS.get(a, a)
+        b = _NUM_WORDS.get(b, b)
+        return f"{a}-{b}"
+    return _SCORE_PAIR_RE.sub(one, text)
+
+
 def facts_check(match: Match, text: str, language: str = "es", *,
                 ordered_score: bool = True) -> dict:
     """Cheap, deterministic verification against the raw match data.
@@ -356,6 +394,7 @@ def facts_check(match: Match, text: str, language: str = "es", *,
     # Normalise unicode dashes (‑ – —) to a plain hyphen first.
     norm = text.translate({0x2010: "-", 0x2011: "-", 0x2012: "-",
                            0x2013: "-", 0x2014: "-", 0x2212: "-"})
+    norm = _digitise_scores(norm)
     h, a = match.home_goals, match.away_goals
     # A goalless draw is narrated as "empate sin goles" far more often than as a
     # literal "0-0", so the score-token check would false-fail almost every real
