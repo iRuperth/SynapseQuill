@@ -46,6 +46,17 @@ def upload_content(cfg: BrandProfile, content_id: str) -> dict:
 
     rec_path = _record_path(cfg, content_id)
     record = json.loads(rec_path.read_text(encoding="utf-8")) if rec_path.exists() else {}
+    # Re-read the record HERE, immediately before uploading, and stop if it is
+    # already published. Callers decide what to upload from a list built before
+    # the first transfer began, and a pass over a full backlog takes a quarter of
+    # an hour — long enough for another run, the API's upload worker or a manual
+    # kick to have published this very item in the meantime. Uploading again
+    # would put a second public copy on the channel and overwrite the first
+    # one's URL below, orphaning it where nothing can find it to clean up.
+    if record.get("youtube_url"):
+        return {"ok": True, "youtube_url": record["youtube_url"],
+                "privacy": record.get("youtube_privacy", cfg.YOUTUBE_PRIVACY),
+                "already_published": True}
     # The uploader appends the hashtags to the description itself, so the
     # fallback description here must be real text, never the tags again.
     scorelines = "\n".join(m.get("scoreline", "") for m in record.get("matches", []))
