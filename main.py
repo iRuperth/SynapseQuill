@@ -106,6 +106,20 @@ def _maybe_run_digest(cfg: BrandProfile, source, upload: bool):
                          on_step=lambda step, msg: print(f"[digest:{step}] {msg}"))
 
 
+# Ceiling for the scheduler's error backoff. Half an hour is long enough that a
+# dead provider costs a handful of attempts a day instead of hundreds, and short
+# enough that a matchday resuming mid-afternoon is picked up the same afternoon.
+_MAX_BACKOFF = 30 * 60
+
+
+def _backoff(interval: int, failures: int) -> float:
+    """Seconds to wait before the next poll: the normal interval while healthy,
+    doubling per consecutive failure up to _MAX_BACKOFF."""
+    if failures <= 0:
+        return interval
+    return min(interval * (2 ** failures), _MAX_BACKOFF)
+
+
 def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
     """Poll the data source and generate a video as each match finishes. When a
     whole matchday wraps up, build (and upload) its digest recap too."""
@@ -122,15 +136,24 @@ def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
             processed.add(int(fid))
     print(f"[scheduler] watching {source.name} fixtures every {interval}s "
           f"(profile '{cfg.id}'). Ctrl+C to stop.")
+    failures = 0
     while True:
         try:
             for match in source.poll_finished(processed):
                 print(f"[scheduler] finished: {match.scoreline} — generating...")
                 run_match(cfg.id, match, do_video=True, do_upload=upload)
             _maybe_run_digest(cfg, source, upload)
+            failures = 0
         except Exception as e:  # noqa: BLE001
-            print(f"[scheduler] error: {e}")
-        time.sleep(interval)
+            failures += 1
+            print(f"[scheduler] error ({failures} in a row): {e}")
+        # Back off while it keeps failing. A match or digest that errors is
+        # never recorded as done, so the next pass retries it — which is what we
+        # want for a blip, and a quota-burning trap for an outage: every retry
+        # of every pending match spends tokens on the SAME failure. Doubling the
+        # wait turned six days of polling into a handful of attempts, and kept
+        # the free-tier budget available for the retry that can actually work.
+        time.sleep(_backoff(interval, failures))
 
 
 def main():
