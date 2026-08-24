@@ -117,6 +117,18 @@ def _background_music(total: float, n_subs_goals: list[tuple[float, float]],
         return None
 
     music = AudioFileClip(str(path))
+    # Skip into the track before using it. A song's opening is usually its
+    # quietest, sparsest stretch, which is the worst thing to sit under an
+    # opening hook — MUSIC_START drops the bed in where the track has already
+    # built up. Guarded against a value past the end of the file, which would
+    # otherwise yield an empty clip and silently drop the music.
+    start = float(os.getenv("MUSIC_START", "0") or 0)
+    if start > 0:
+        if start < music.duration:
+            music = music.subclipped(start)
+        else:
+            print(f"[music] MUSIC_START={start:g}s is past the end of "
+                  f"{path.name} ({music.duration:.0f}s) — starting from 0")
     # Loop the track if it's shorter than the video, then trim to length.
     if music.duration < total:
         music = music.with_effects([AudioLoop(duration=total)])
