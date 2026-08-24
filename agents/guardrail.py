@@ -399,13 +399,26 @@ def facts_check(match: Match, text: str, language: str = "es", *,
 # ── Layer 2: LLM-as-judge ────────────────────────────────────────────
 _JUDGE_SYS = (
     "You are a strict fact-checking judge. Given the MATCH FACTS and a generated "
-    "NARRATION, decide if the narration is fully grounded in the facts (no invented "
+    "NARRATION, decide if the narration is grounded in the facts (no invented "
     "scores, scorers, minutes; every card keeps its EXACT colour from the facts — "
     "a red card narrated as yellow, or yellow as red, is NOT grounded; every goal "
     "keeps its exact type — penalty and own goal must be narrated as such — and "
     "its body part: a header never becomes a shot, a right foot never becomes a "
     "left foot, and no body part may be invented), is written "
-    "in the expected LANGUAGE, and stays respectful. Respond as JSON only: "
+    "in the expected LANGUAGE, and stays respectful.\n"
+    # Without this, the judge reads "grounded" as "complete" and rejects correct
+    # prose for what it leaves out. That is the wrong test twice over: a digest
+    # segment is a ~20-second condensation that CANNOT list nine bookings, and
+    # even a full reel is edited, not a transcript. Judging omission here burned
+    # all three regeneration attempts on narrations that invented nothing, and
+    # shipped them flagged anyway. Completeness is the narrator prompt's job;
+    # this layer exists to catch fabrication and contradiction.
+    "IMPORTANT: the narration is an edited summary, not a transcript. Leaving an "
+    "event out is NOT a grounding failure — judge ONLY what the narration "
+    "actually asserts. Mark grounded=false only when it states something the "
+    "facts contradict or never mention. Never mark it false for being "
+    "incomplete, condensed, or for omitting cards, goals or statistics.\n"
+    "Respond as JSON only: "
     '{"grounded": bool, "language_ok": bool, "tone_ok": bool, "reason": str}.'
 )
 
