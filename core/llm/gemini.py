@@ -27,11 +27,11 @@ def _to_contents(messages: list) -> tuple[list, str | None]:
 
 
 def call_gemini(messages: list, max_tokens: int = 2000, timeout: int = 120,
-                label: str = "Gemini") -> str:
+                label: str = "Gemini", model: str | None = None) -> str:
     key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not key:
         raise RuntimeError("No GEMINI_API_KEY found in environment / .env")
-    model = os.getenv("GEMINI_MODEL", _DEFAULT_MODEL)
+    model = model or os.getenv("GEMINI_MODEL", _DEFAULT_MODEL)
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{model}:generateContent?key={key}")
 

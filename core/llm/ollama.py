@@ -8,9 +8,9 @@ _DEFAULT_MODEL = "qwen2.5:7b"
 
 
 def call_ollama(messages: list, max_tokens: int = 2000, timeout: int = 300,
-                label: str = "Ollama") -> str:
+                label: str = "Ollama", model: str | None = None) -> str:
     host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-    model = os.getenv("OLLAMA_MODEL", _DEFAULT_MODEL)
+    model = model or os.getenv("OLLAMA_MODEL", _DEFAULT_MODEL)
     resp = requests.post(
         f"{host}/api/chat",
         json={
