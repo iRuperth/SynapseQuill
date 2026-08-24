@@ -18,12 +18,18 @@ PROFILE="laliga_es"
 INTERVAL="120"   # seconds between polls
 
 # Publish to YouTube as each video is produced?
+#
+# Leave this OFF and let scripts/f88ball_uploader.sh do the publishing. That is
+# not caution, it is ordering: this flag uploads each video the moment it is
+# produced, which is GENERATION order. A Friday match that finishes generating
+# after a Sunday one would publish after it, and a round's recap could go out
+# ahead of the matches it recaps. The uploader drains a queue sorted by when
+# each match was PLAYED, and it also handles the YouTube daily quota of roughly
+# six uploads in one place instead of failing mid-run here.
+#
 #   "no"  -> generate only; the .mp4 lands in profiles/<id>/output/videos/
-#   "yes" -> upload every generated video, with the privacy from .env
-#            (YOUTUBE_PRIVACY, currently 'public') — i.e. it publishes to the
-#            channel unattended, which cannot be undone from here.
-# Deliberately OFF: publishing is a one-way action and should be a decision, not
-# a default inherited from a previous season's setup.
+#            and the uploader picks it up on its next pass
+#   "yes" -> upload immediately, in generation order, at YOUTUBE_PRIVACY
 UPLOAD="${F88_UPLOAD:-no}"
 
 cd "$PROJECT_DIR"
@@ -40,8 +46,8 @@ if [ "$UPLOAD" = "yes" ]; then
   ARGS+=(--upload)
   echo "[scheduler] uploads ENABLED — generated videos will be published to YouTube."
 else
-  echo "[scheduler] uploads disabled — videos are generated locally only."
-  echo "[scheduler] to publish, restart with F88_UPLOAD=yes (or set UPLOAD=yes here)."
+  echo "[scheduler] uploads disabled here — publishing is the uploader's job."
+  echo "[scheduler] see: bash scripts/f88ball_uploader_ctl.sh status"
 fi
 
 exec uv run python main.py "${ARGS[@]}"
