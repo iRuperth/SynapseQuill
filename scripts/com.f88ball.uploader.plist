@@ -23,10 +23,19 @@
         <string>__PROJECT_DIR__/scripts/f88ball_uploader.sh</string>
     </array>
 
-    <!-- Every 4 hours: six runs a day against a ~6-upload daily quota, so the
-         backlog always drains as fast as YouTube permits without hammering. -->
+    <!-- 15 minutes. An idle pass is genuinely free on the YouTube side: it opens
+         no connection, imports no Google library and spends no quota, so there
+         is no reason to make a finished recap wait hours for its turn.
+
+         The floor is NOT set by YouTube. It is set by what a pass costs UPSTREAM
+         when something is pending: ordering a digest walks a whole round of
+         fixtures across ESPN and roninfc.fans, and that second one is a small
+         supporters site the data source deliberately polls gently. At 5 minutes
+         with a digest queued that is hundreds of scrapes a day of a community
+         server; at 15 it stays neighbourly while a new match recap still reaches
+         the channel within the quarter hour. -->
     <key>StartInterval</key>
-    <integer>14400</integer>
+    <integer>900</integer>
 
     <!-- Run once at load too, so installing it starts publishing immediately
          rather than four hours later. -->
