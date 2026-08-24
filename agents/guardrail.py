@@ -382,6 +382,137 @@ def _digitise_scores(text: str) -> str:
     return _SCORE_PAIR_RE.sub(one, text)
 
 
+# ── Language enforcement ─────────────────────────────────────────────
+# A Chinese description was once published under a Spanish title: the fallback
+# chain reached qwen, a Chinese-trained model, and nothing checked the language
+# because the metadata path runs the facts layer WITHOUT the LLM judge for cost.
+# So this must stay deterministic — an LLM check would not protect that path,
+# and could itself fail over to a model answering in the wrong language.
+#
+# Two independent tests, because they catch different drifts:
+#   · the WRITING SYSTEM, which catches Chinese, Cyrillic, Arabic and friends
+#   · Spanish FUNCTION WORDS, which catch the far likelier drift into English
+#     or another Latin-script language, invisible to a script check
+_NON_LATIN_RANGES = (
+    (0x0370, 0x03FF), (0x0400, 0x052F),          # Greek, Cyrillic (+ supplement)
+    (0x0530, 0x058F), (0x0590, 0x05FF),          # Armenian, Hebrew
+    (0x0600, 0x06FF), (0x0700, 0x074F),          # Arabic, Syriac
+    (0x0780, 0x07BF), (0x0900, 0x0DFF),          # Thaana, all Indic scripts
+    (0x0E00, 0x0EFF), (0x0F00, 0x0FFF),          # Thai/Lao, Tibetan
+    (0x1000, 0x109F), (0x10A0, 0x10FF),          # Myanmar, Georgian
+    (0x1200, 0x139F), (0x13A0, 0x13FF),          # Ethiopic, Cherokee
+    (0x1780, 0x17FF), (0x1800, 0x18AF),          # Khmer, Mongolian
+    (0x1F00, 0x1FFF),                            # Greek Extended
+    (0x2E80, 0x2FDF),                            # CJK + Kangxi radicals
+    (0x3000, 0x303F), (0x3040, 0x30FF),          # CJK punctuation, kana
+    (0x3100, 0x312F), (0x3130, 0x318F),          # Bopomofo, Hangul jamo
+    (0x1100, 0x11FF),                            # Hangul jamo (what NFD produces)
+    (0x3400, 0x4DBF), (0x4E00, 0x9FFF),          # CJK ideographs
+    (0xA000, 0xA4CF),                            # Yi
+    (0xAC00, 0xD7AF),                            # Hangul syllables
+    (0xF900, 0xFAFF),                            # CJK compatibility
+    (0xFB50, 0xFDFF), (0xFE70, 0xFEFF),          # Arabic presentation forms
+    (0xFF00, 0xFFDC),                            # Fullwidth AND halfwidth kana
+    (0x20000, 0x3FFFF),                          # CJK extensions B and beyond
+)
+
+# Latin-script languages this project generates.
+_LATIN_LANGS = {"es", "en", "fr", "it", "pt", "de", "ca", "gl", "eu",
+                "nl", "sv", "da", "no", "pl", "ro", "cs", "hu", "tr"}
+
+# Spellings of a language that mean the same thing. Without this, a profile or
+# an API caller writing "es-ES" instead of "es" turned the whole guard off — it
+# fell through to "unknown language, do not guess" and returned clean.
+_LANG_ALIASES = {"spa": "es", "spanish": "es", "castellano": "es", "cast": "es",
+                 "eng": "en", "english": "en", "fra": "fr", "french": "fr",
+                 "ita": "it", "italian": "it", "por": "pt", "portuguese": "pt"}
+
+
+def _base_lang(language: str) -> str:
+    """Normalise a language tag to its base subtag: es-ES, es_419, Spanish -> es."""
+    raw = (language or "es").strip().lower().replace("_", "-")
+    raw = raw.split("-")[0]
+    return _LANG_ALIASES.get(raw, raw)
+
+
+# Function words are the honest signal for language identity: they are frequent,
+# closed-class and survive any subject matter, unlike the proper nouns that
+# dominate a football recap and look identical in every language.
+_MARKERS = {
+    "es": {"el", "la", "los", "las", "de", "del", "que", "en", "con", "por",
+           "para", "un", "una", "y", "se", "su", "al", "lo", "es", "pero",
+           "como", "mas", "más", "sin", "sobre", "desde", "cuando", "tras"},
+    "en": {"the", "of", "and", "to", "in", "with", "for", "was", "were", "his",
+           "their", "from", "after", "which", "that", "this", "have", "has"},
+    "pt": {"o", "os", "as", "do", "da", "dos", "das", "que", "em", "com", "para",
+           "uma", "não", "mas", "seu", "pelo", "pela"},
+    "it": {"il", "lo", "gli", "della", "che", "con", "per", "una", "sono",
+           "nel", "dal", "suo", "anche", "dopo"},
+    "fr": {"le", "les", "des", "du", "que", "dans", "avec", "pour", "une",
+           "est", "sur", "par", "ses", "mais", "cette"},
+}
+
+_WORD_RE = re.compile(r"[a-záéíóúüñàèìòùâêîôûçãõäöß]+", re.IGNORECASE)
+
+
+def _wrong_script(text: str, language: str) -> str:
+    """Characters from a writing system the target language never uses.
+
+    A THRESHOLD applies rather than firing on the first character: a Spanish
+    recap may legitimately gloss a club or a player in its own script ("el
+    Ολυμπιακός", "Артем Довбик"), and this profile covers a Japanese-named club.
+    Failing those costs three regeneration attempts and ships the draft anyway,
+    so a handful of foreign characters inside otherwise-Spanish prose is treated
+    as a quotation, while a text actually written in another script is not.
+    """
+    lang = _base_lang(language)
+    if lang not in _LATIN_LANGS:
+        return ""              # no script rules for this target; do not guess
+    bad = [ch for ch in (text or "")
+           if any(lo <= ord(ch) <= hi for lo, hi in _NON_LATIN_RANGES)]
+    if not bad:
+        return ""
+    # Quotation, or genuinely another script? Judge by PROPORTION, not by a raw
+    # count: a club name glossed natively runs about ten characters ("el
+    # Ολυμπιακός"), which a small fixed threshold rejects, while text actually
+    # written in another script is overwhelmingly made of it. A long foreign
+    # passage inside a long text is caught by the absolute arm.
+    ratio = len(bad) / max(len(text or ""), 1)
+    if ratio < 0.15 and len(bad) < 40:
+        return ""
+    return "".join(dict.fromkeys(bad))[:12]
+
+
+def _wrong_latin_language(text: str, language: str) -> str:
+    """The Latin-script language `text` looks like, when it is not `language`.
+
+    This is the drift a script check cannot see, and the likelier one: the
+    fallback chain is full of English-biased models, so a Spanish instruction is
+    far more often answered in English than in Chinese. Deliberately conservative
+    — it only speaks up when the target's own function words are nearly absent
+    AND another language's clearly dominate, so a Spanish sentence quoting an
+    English phrase never trips it.
+    """
+    lang = _base_lang(language)
+    if lang not in _MARKERS:
+        return ""
+    words = [w.lower() for w in _WORD_RE.findall(text or "")]
+    if len(words) < 25:
+        return ""              # too short to judge; a title is not evidence
+    counts = {code: sum(w in marks for w in words)
+              for code, marks in _MARKERS.items()}
+    own = counts[lang]
+    rival, rival_n = max(((c, n) for c, n in counts.items() if c != lang),
+                         key=lambda kv: kv[1])
+    own_ratio = own / len(words)
+    # Spanish prose runs well over 15% function words. Requiring the target to
+    # be under 4% AND a rival to more than double it keeps this far away from
+    # any real Spanish text.
+    if own_ratio < 0.04 and rival_n >= max(4, own * 2 + 2):
+        return rival
+    return ""
+
+
 def facts_check(match: Match, text: str, language: str = "es", *,
                 ordered_score: bool = True) -> dict:
     """Cheap, deterministic verification against the raw match data.
@@ -392,6 +523,18 @@ def facts_check(match: Match, text: str, language: str = "es", *,
     score ('se adelantó 1-0') last — there the 'last token = final' rule would
     false-fail. The 'final must appear at least once' rule still applies."""
     issues = []
+
+    # Language first: the parameter was accepted here and never used, so a
+    # description generated in the wrong writing system passed every other check
+    # (the scores and names it quoted were correct) and was published.
+    wrong = _wrong_script(text, language)
+    if wrong:
+        issues.append(f"text is not written in {language} "
+                      f"(found non-Latin characters: {wrong})")
+    else:
+        other = _wrong_latin_language(text, language)
+        if other:
+            issues.append(f"text reads as '{other}', not {language}")
 
     # Verify the FINAL score. A play-by-play narration states running scores as
     # it goes, so "the correct pair appears somewhere" is not enough — a wrong
