@@ -309,6 +309,19 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
     # video, and #Highlights is what people search for full recaps).
     tags = build_digest_tags(cfg.COMPETITION, is_short=(fmt.key == "reel"))
 
+    # Build the publish metadata NOW, not inside the upload branch below. A
+    # digest generated with uploads off is meant to be published later by hand,
+    # and upload_content() falls back to a generic "Resumen del día · <day>"
+    # when the record carries none — a DAY title on what is deliberately a
+    # ROUND recap spanning Friday to Monday. Storing it here means the manual
+    # upload publishes exactly what the automatic one would have.
+    # Real text as the description: the uploader appends the hashtags itself,
+    # so repeating them here would print them twice (a spam wall).
+    scorelines = "\n".join(_scoreline_es(u["scoreline"]) for u in used)
+    meta = {"title": _digest_title(day, cfg.COMPETITION),
+            "description": f"Todos los resultados de la jornada:\n{scorelines}",
+            "tags": tags}
+
     record = {
         "type": "digest", "day": day, "format": fmt.key,
         "matches": used, "video": str(out), "tags": tags,
