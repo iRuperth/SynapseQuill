@@ -71,7 +71,7 @@ def generate_platform(cfg: BrandProfile, match: Match, platform: str,
     check = facts_check(match, text, cfg.LANGUAGE, ordered_score=False)
     if not check["ok"]:
         reasons = "; ".join(check["issues"])
-        text = _render(
+        retry = _render(
             platform, _LANG.get(cfg.LANGUAGE, "Spanish"), cfg.system_preamble,
             "Match facts", _facts_block(match),
             f"{base_grounding} A previous draft was rejected for: {reasons}. "
@@ -79,6 +79,14 @@ def generate_platform(cfg: BrandProfile, match: Match, platform: str,
             "EXACTLY as given.",
             provider=provider or cfg.LLM_PROVIDER, label=f"Content-{platform}",
         )
+        # Check the RETRY too. It used to be returned unverified, which meant a
+        # second draft could be worse than the first and still be what shipped —
+        # and when the provider chain is stuck on a model answering in the wrong
+        # language, BOTH drafts are wrong and the unchecked one is the one that
+        # goes out. Keep whichever survives more of the checks.
+        retry_check = facts_check(match, retry, cfg.LANGUAGE, ordered_score=False)
+        if retry_check["ok"] or len(retry_check["issues"]) < len(check["issues"]):
+            text = retry
     return text
 
 
