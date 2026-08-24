@@ -12,6 +12,7 @@ Reuses narrator, team-coloured media_provider, animated_graphics and Edge-TTS.
 """
 
 import json
+import os
 import time
 from collections.abc import Callable
 
@@ -88,7 +89,9 @@ def _stitch_with_crossfade(segments: list):
             continue
         start = t - _XFADE
         clip = seg.with_start(start).with_effects([CrossFadeIn(_XFADE)])
-        # Soft-fade the audio too so the narration/music don't cut abruptly.
+        # Soft-fade the audio too so the narration doesn't cut abruptly. Only
+        # the narration: the music bed is composited over the finished stitch
+        # further down, so it is deliberately NOT subject to these joins.
         if clip.audio is not None:
             clip = clip.with_audio(
                 clip.audio.with_effects([AudioFadeIn(_XFADE), AudioFadeOut(_XFADE)]))
@@ -295,6 +298,28 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
     on_step("video", "Stitching the digest")
     digest = _stitch_with_crossfade(segments)
 
+    # Background music, laid over the WHOLE stitched digest rather than per
+    # segment. Two reasons for doing it here: a per-segment bed would restart
+    # the track every 28-90s, and _stitch_with_crossfade already fades each
+    # segment's audio in and out at the joins, which would chop the music into
+    # audibly separate pieces instead of one continuous bed.
+    # The bed is FLAT (peak == base), like assemble_plain: the reel swells on
+    # goal shouts using that segment's own subtitle timings, and those are local
+    # to each segment — reusing them here would need every cue re-offset to its
+    # position in the stitched timeline. A steady bed under a 6-7 minute recap
+    # is the right call anyway.
+    # _background_music loops a track shorter than the digest and trims a longer
+    # one, so this holds whatever MUSIC_TRACK points at.
+    if digest.audio is not None:
+        from moviepy import CompositeAudioClip
+
+        from .video_assembler import _background_music
+        base = float(os.getenv("MUSIC_VOLUME", "0.08"))
+        music = _background_music(float(digest.duration), [], base, base)
+        if music is not None:
+            on_step("music", "Laying the background music bed")
+            digest = digest.with_audio(CompositeAudioClip([music, digest.audio]))
+
     out = cfg.VIDEO_DIR / f"digest_{day}_{fmt.key}.mp4"
     digest.write_videofile(str(out), fps=24, codec="libx264", audio_codec="aac",
                           logger=None)
@@ -325,6 +350,7 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
     record = {
         "type": "digest", "day": day, "format": fmt.key,
         "matches": used, "video": str(out), "tags": tags,
+        "metadata": meta,
         "duration": round(float(digest.duration) if hasattr(digest, "duration") else 0, 1),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "failed_segments": failed_segments,
@@ -344,13 +370,6 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         record["upload_skipped"] = "guardrail failed"
     elif cfg.AUTO_UPLOAD if upload is None else upload:
         on_step("upload", f"Uploading digest to YouTube ({cfg.YOUTUBE_PRIVACY})")
-        title = _digest_title(day, cfg.COMPETITION)
-        # Real text as the description — the uploader appends the hashtags
-        # itself, so putting the tags here would print them twice (spam wall).
-        scorelines = "\n".join(_scoreline_es(u["scoreline"]) for u in used)
-        meta = {"title": title,
-                "description": f"Todos los resultados de la jornada:\n{scorelines}",
-                "tags": tags}
         try:
             from .publishers import upload_youtube
             record["youtube_url"] = upload_youtube(cfg, out, meta)
