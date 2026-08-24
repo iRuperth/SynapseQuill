@@ -93,7 +93,8 @@ def run_match(profile_id: str, match: Match, *,
     # before this loop existed.
     on_step("guardrail", "Verifying narration is grounded in match facts")
     from agents.guardrail import verify
-    verdict = verify(match, narration, cfg.LANGUAGE, judge_provider=cfg.JUDGE_PROVIDER)
+    verdict = verify(match, narration, cfg.LANGUAGE,
+                     judge_provider=cfg.JUDGE_PROVIDER, judge_model=cfg.JUDGE_MODEL)
     result["guardrail"] = verdict
     for attempt in range(2):
         if verdict["passed"]:
@@ -108,7 +109,8 @@ def run_match(profile_id: str, match: Match, *,
                             f"for: {reasons}. Copy every player name and card "
                             "colour EXACTLY as given in the facts.",
                             provider=cfg.LLM_PROVIDER)
-        verdict = verify(match, narration, cfg.LANGUAGE, judge_provider=cfg.JUDGE_PROVIDER)
+        verdict = verify(match, narration, cfg.LANGUAGE,
+                         judge_provider=cfg.JUDGE_PROVIDER, judge_model=cfg.JUDGE_MODEL)
         result["narration"] = narration
         result["guardrail"] = verdict
     if not verdict["passed"]:

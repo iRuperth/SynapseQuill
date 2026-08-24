@@ -254,7 +254,8 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
         # prose too. Retry with the failed checks fed back (3 attempts max).
         from agents.guardrail import verify
         verdict = verify(full, narration, cfg.LANGUAGE,
-                         judge_provider=cfg.JUDGE_PROVIDER)
+                         judge_provider=cfg.JUDGE_PROVIDER,
+                         judge_model=cfg.JUDGE_MODEL)
         for attempt in range(2):
             if verdict["passed"]:
                 break
@@ -271,7 +272,8 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
                                 digest_brief=brief, digest_open=(i == 0),
                                 digest_close=(i == last_i))
             verdict = verify(full, narration, cfg.LANGUAGE,
-                             judge_provider=cfg.JUDGE_PROVIDER)
+                             judge_provider=cfg.JUDGE_PROVIDER,
+                             judge_model=cfg.JUDGE_MODEL)
         if not verdict["passed"]:
             failed_segments.append(full.scoreline)
             on_step("guardrail", f"WARNING: '{full.scoreline}' still failing "

@@ -443,7 +443,8 @@ def _extract_json(raw: str) -> str:
     return best or cleaned
 
 
-def llm_judge(match: Match, text: str, language: str, *, provider: str | None = None) -> dict:
+def llm_judge(match: Match, text: str, language: str, *, provider: str | None = None,
+              model: str | None = None) -> dict:
     from pipeline.narrator import _facts_block
 
     user = (
@@ -453,7 +454,8 @@ def llm_judge(match: Match, text: str, language: str, *, provider: str | None = 
     )
     raw = call_llm(
         [{"role": "system", "content": _JUDGE_SYS}, {"role": "user", "content": user}],
-        provider=provider, max_tokens=_JUDGE_MAX_TOKENS, label="Guardrail",
+        provider=provider, model=model, max_tokens=_JUDGE_MAX_TOKENS,
+        label="Guardrail",
     )
     try:
         data = json.loads(repair_json(_extract_json(raw)))
@@ -475,7 +477,8 @@ def llm_judge(match: Match, text: str, language: str, *, provider: str | None = 
 
 
 def verify(match: Match, text: str, language: str, *,
-           judge_provider: str | None = None, use_judge: bool = True) -> dict:
+           judge_provider: str | None = None, judge_model: str | None = None,
+           use_judge: bool = True) -> dict:
     """Combined verdict. `passed` is True only if both layers agree.
 
     When the judge is unreachable OR returns unparseable output, we fall back
@@ -485,7 +488,8 @@ def verify(match: Match, text: str, language: str, *,
     result = {"facts": facts, "passed": facts["ok"]}
     if use_judge:
         try:
-            judge = llm_judge(match, text, language, provider=judge_provider)
+            judge = llm_judge(match, text, language, provider=judge_provider,
+                              model=judge_model)
             result["judge"] = judge
             if judge.get("parsed"):
                 result["passed"] = (facts["ok"] and judge["grounded"]

@@ -133,6 +133,11 @@ class BrandProfile:
         self.JUDGE_PROVIDER = j.get("judge_provider",
                                     self._env_get("JUDGE_PROVIDER",
                                                   self.LLM_PROVIDER))
+        # "different model" is the requirement, and on a single provider that
+        # means naming one — pointing the judge at the same provider without a
+        # model of its own would hand it the narrator's own weights. It also
+        # wins a second rate-limit budget, since Groq meters per model.
+        self.JUDGE_MODEL = j.get("judge_model", self._env_get("JUDGE_MODEL", "")) or None
 
         # --- Voice / TTS ---
         # A named voice preset (man/woman x ES/EN) is the friendly choice; it
