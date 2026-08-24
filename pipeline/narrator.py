@@ -409,8 +409,15 @@ _LENGTH = {
 
 
 def _event_count(match: Match) -> int:
-    """Goals + cards — the things the narration must walk through one by one."""
-    return len(match.goals) + len(match.cards)
+    """Everything the narration must walk through one by one.
+
+    Notes count too, not just goals and cards: a penalty that was saved or
+    missed lives ONLY there ("Penalty saved. ... by David Soria"), the facts
+    block hands it to the narrator, and the guardrail judge expects to hear it.
+    Leaving notes out understated a card-heavy game with a penalty sequence by
+    a third, so it was given a budget for a much quieter match and kept dropping
+    the last few events."""
+    return len(match.goals) + len(match.cards) + len(match.notes or [])
 
 
 def _length_for(match: Match, style: str) -> str:
@@ -426,10 +433,22 @@ def _length_for(match: Match, style: str) -> str:
     if n <= 8:
         return ("160-240 words. Several things happened — give EACH goal its full "
                 "detail (origin, assist and finish) plus the opening and closing.")
-    return ("230-340 words. This was an EVENTFUL match — narrate EVERY goal with "
-            "its origin, assist and finish, and every card, without rushing or "
-            "skipping any; still open with the hook and end with the score + call "
-            "to action.")
+    if n <= 12:
+        return ("230-340 words. This was an EVENTFUL match — narrate EVERY goal "
+                "with its origin, assist and finish, and every card, without "
+                "rushing or skipping any; still open with the hook and end with "
+                "the score + call to action.")
+    # Above a dozen events the old target plateaued, so a 3-goal, 9-card game
+    # with a penalty sequence got the same room as one with half the incident
+    # and kept dropping the stoppage-time cards — which the judge then rejected,
+    # burning all three regeneration attempts on a budget that could not fit the
+    # facts. Going long is the safe direction: the duration guardrail trims a
+    # reel that overshoots 2:59, whereas omitted facts fail the guardrail.
+    return ("300-430 words. This was a VERY eventful match — every goal with its "
+            "origin, assist and finish, EVERY card with its player, and any "
+            "penalty awarded, saved or missed. Do not skip the stoppage-time "
+            "cards. Keep it brisk, but leave nothing out; still open with the "
+            "hook and end with the score + call to action.")
 
 
 def _max_tokens_for(match: Match, style: str) -> int:
@@ -445,7 +464,9 @@ def _max_tokens_for(match: Match, style: str) -> int:
         return 700
     if n <= 8:
         return 1000
-    return 1400
+    if n <= 12:
+        return 1400
+    return 1900
 
 
 def narrate(match: Match, *, language: str = "es", system_preamble: str = "",
