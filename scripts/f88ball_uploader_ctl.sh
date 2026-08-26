@@ -34,7 +34,10 @@ case "${1:-status}" in
         "$SRC_PLIST" > "$DEST_PLIST"
     launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
     launchctl bootstrap "gui/$(id -u)" "$DEST_PLIST"
-    echo "Installed and started. Publishes in the background every 4 hours."
+    # Read the cadence out of the plist rather than restating it here, so the
+    # two cannot drift apart the way they already did once.
+    EVERY="$(/usr/bin/plutil -extract StartInterval raw -o - "$DEST_PLIST" 2>/dev/null || echo "?")"
+    echo "Installed and started. Publishes in the background every ${EVERY}s."
     echo "   Logs: $LOG"
     ;;
   start)
