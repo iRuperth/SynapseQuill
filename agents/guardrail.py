@@ -310,6 +310,84 @@ def _name_spelling_issues(match: Match, text: str) -> list[str]:
     return issues
 
 
+# Proper nouns that are NOT people and legitimately appear mid-sentence without
+# being in the match data: competition and country words the model may reach for
+# when naming what it is describing. Everything else that looks like a name has
+# to be traceable to the facts.
+_KNOWN_PROPER = {
+    "laliga", "liga", "champions", "europa", "conference", "eurocopa",
+    "supercopa", "copa", "rey", "mundial", "espana", "uefa", "fifa",
+    "primera", "segunda", "division", "hypermotion", "naciones", "jornada", "var",
+}
+
+
+def _fact_name_tokens(match: Match) -> set:
+    """Every name-shaped word the match data actually contains.
+
+    Drawn from the same material the model is given — teams, venue, city,
+    country, competition, and every goal and card including their prose, which
+    is where an assister's name lives. If a word is not in here, nothing told
+    the model about it.
+    """
+    parts = [match.home, match.away, match.venue, match.city, match.country,
+             match.competition]
+    for ev in [*match.goals, *match.cards]:
+        parts += [ev.player, ev.team, getattr(ev, "description", ""),
+                  getattr(ev, "reason", "")]
+    # The play-by-play notes matter as much as the goals: a disallowed goal or a
+    # missed penalty names a player who appears NOWHERE else in the data, and the
+    # narrator is expressly allowed to state those. Leaving them out flagged real
+    # facts as inventions — "Brahim Díaz" for a VAR-overturned goal — on a third
+    # of everything the channel had already published.
+    parts += list(match.notes or [])
+    parts += list((match.stats or {}).keys())
+    tokens = set()
+    for part in parts:
+        for tok in re.findall(r"[^\W\d_]+", part or "", re.UNICODE):
+            if len(tok) >= 3:
+                tokens.add(_fold(tok))
+    return tokens
+
+
+def _invented_name_issues(match: Match, text: str) -> list[str]:
+    """Flag a PERSON the match data never mentions.
+
+    This exists because a real description published to the channel called Real
+    Madrid "el equipo de Carlo Ancelotti" — a manager who left the club a season
+    earlier. Nothing in a Match carries a coach at all, so that name could only
+    have come from the model's training data, and no other layer could catch it:
+    the deterministic checks verify what the data DOES state, and the free-prose
+    invention they leave to the LLM judge is never run on a description.
+
+    A stale fact stated with confidence is worse than a vague one, and a manager
+    is exactly the kind of detail a model is sure about and wrong about.
+
+    Deliberately narrow, because a false flag burns three regenerations: only
+    words shaped like a name — initial capital, lower-case tail, so acronyms like
+    VAR and LALIGA are never candidates — and never the first word of a sentence,
+    which is capitalised by grammar rather than by being a name.
+    """
+    allowed = _fact_name_tokens(match)
+    if not allowed:
+        return []
+    issues, seen = [], set()
+    # Split on sentence boundaries and drop each sentence's opening word, whose
+    # capital says nothing about whether it is a name.
+    for sentence in re.split(r"(?<=[.!?\n])\s+", text):
+        words = re.findall(r"\b[^\W\d_]+\b", sentence, re.UNICODE)
+        for word in words[1:]:
+            if not re.fullmatch(r"[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]{2,}", word):
+                continue
+            cand = _fold(word)
+            if cand in allowed or cand in seen or cand in _KNOWN_PROPER:
+                continue
+            seen.add(cand)
+            issues.append(f"'{word}' is a name the match data never mentions — "
+                          f"do not name anyone who did not play, score or get "
+                          f"booked, and never name a coach")
+    return issues
+
+
 # Football-noun genders for the determiner-agreement check. Spanish only.
 # "área" is EXCLUDED: feminine but correctly takes "el/un" (stressed a-).
 # "pase"/"remate" are EXCLUDED from this generic pattern: they are also verb
@@ -577,6 +655,7 @@ def facts_check(match: Match, text: str, language: str = "es", *,
     issues += _goal_detail_issues(match, norm)
     issues += _goal_type_issues(match, norm)
     issues += _name_spelling_issues(match, text)
+    issues += _invented_name_issues(match, text)
     if (language or "es").startswith("es"):
         issues += _grammar_issues(norm)
 
