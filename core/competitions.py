@@ -33,6 +33,40 @@ Preset keys
 
 import re
 
+# ── The clubs the channel films individually in European competition ──
+# Every match of LaLiga and of the club's own league is covered regardless, so
+# this list decides ONE thing: which foreign/cup fixtures are worth a video of
+# their own rather than a mention in the round-up. Two groups, one list:
+# the clubs a Spanish audience follows abroad, and every LaLiga side, so a
+# Spanish club's European night is never missed.
+#
+# THIS IS THE ONLY PART OF THE CONFIG THAT NEEDS A LOOK EACH SUMMER — promotions,
+# relegations, who qualified for Europe. Nothing else here is season-specific:
+# the ESPN source queries by DATE, never by season, so a new campaign starts on
+# its own. LaLiga itself is unfiltered, so a newly promoted side is covered
+# without touching this list; it only gates European ties and the Copa del Rey.
+#
+# Names are matched accent- and case-insensitively, as a substring either way
+# (see multi.Leg.wants), so the short form here still matches a provider's long
+# official name.
+CLUBES_GRANDES = [
+    # Spain — every LaLiga club, so any of them in Europe or the Copa is filmed.
+    "Real Madrid", "Barcelona", "Atletico Madrid", "Athletic Club", "Villarreal",
+    "Real Sociedad", "Real Betis", "Sevilla", "Valencia", "Celta Vigo",
+    "Rayo Vallecano", "Osasuna", "Mallorca", "Girona", "Getafe", "Alaves",
+    "Espanyol", "Elche", "Levante", "Oviedo",
+    # The rest of Europe — the clubs a Spanish viewer recognises on sight.
+    "Bayern Munich", "Paris Saint-Germain", "Manchester City", "Liverpool",
+    "Arsenal", "Manchester United", "Chelsea", "Tottenham", "Internazionale",
+    "AC Milan", "Juventus", "Napoli", "Atalanta", "Borussia Dortmund",
+    "Bayer Leverkusen", "Newcastle United", "Benfica", "FC Porto",
+    "Sporting CP", "Ajax", "PSV Eindhoven",
+]
+
+# The national team, kept apart from the clubs: it is what makes a Nations
+# League or a qualifier belong on this channel at all.
+SELECCION = ["Spain"]
+
 # key -> preset. `provider` picks the data source; the id fields are read by
 # that source (apifootball uses league_id/season; thesportsdb uses tsdb_league).
 COMPETITIONS = {
@@ -65,18 +99,58 @@ COMPETITIONS = {
         "hide_venue": True,         # the stadium is never named
         "aliases": ["world cup", "mundial", "copa mundial"],
     },
-    # ── The channel: every LaLiga match PLUS every Rōnin FC match ──
-    # Two unrelated providers merged into one feed (data_sources/multi.py):
-    # ESPN for LaLiga, the Catalan federation for Rōnin. The `team` on the Rōnin
-    # leg is what narrows that source to the club's own games, home or away, in
-    # whichever competition it is playing — so a Copa Catalunya tie is picked up
-    # as readily as a league fixture.
+    # ── The channel ──────────────────────────────────────────────────────
+    # Several unrelated providers merged into one feed (data_sources/multi.py):
+    # ESPN for the Spanish and European competitions, the Catalan federation for
+    # Rōnin. The `team` on the Rōnin leg is what narrows that source to the club's
+    # own games, home or away, in whichever competition it is playing — so a Copa
+    # Catalunya tie is picked up as readily as a league fixture.
+    #
+    # Every leg brings its whole competition INTO the feed, so each round-up
+    # accounts for all of it. `video_teams` then decides which of those matches
+    # earn a video of their own; the rest appear only in their round's recap.
+    # That split is what lets the channel carry the Champions League and the Copa
+    # del Rey — 189 and 137 matches a season — without filming a first round of
+    # 25 ties between clubs the audience has never heard of. See multi.Leg.
+    #
+    # NOTHING HERE IS TIED TO A SEASON: the ESPN source queries by date, so each
+    # new campaign starts on its own. The national-team legs cover the full
+    # rotation (Nations League -> qualifying -> tournament -> friendlies) so the
+    # cycle turning over never needs a config change either; a competition that
+    # is not currently being played simply returns no fixtures, at the cost of
+    # one cached request per poll against a keyless, quota-free API.
     "laliga_ronin": {
-        "label": "LaLiga + Rōnin FC (todos los de la liga española y los de Rōnin)",
+        "label": "LaLiga + Rōnin FC + Champions y selección española",
         "provider": "multi",
         "legs": [
+            # The channel's base: every match, always filmed.
             {"key": "laliga", "provider": "espn", "espn_slug": "esp.1"},
             {"key": "ronin", "provider": "fcf", "team": "Rōnin"},
+            # Spanish cups.
+            {"key": "copadelrey", "provider": "espn",
+             "espn_slug": "esp.copa_del_rey", "video_teams": CLUBES_GRANDES},
+            {"key": "supercopa", "provider": "espn", "espn_slug": "esp.super_cup"},
+            # Europe. Filmed for the clubs the audience follows, plus every tie
+            # from the quarter-finals on (multi.DEFAULT_ALWAYS_ROUNDS).
+            {"key": "champions", "provider": "espn",
+             "espn_slug": "uefa.champions", "video_teams": CLUBES_GRANDES},
+            {"key": "europa", "provider": "espn",
+             "espn_slug": "uefa.europa", "video_teams": CLUBES_GRANDES},
+            {"key": "conference", "provider": "espn",
+             "espn_slug": "uefa.europa.conf", "video_teams": CLUBES_GRANDES},
+            {"key": "supercopaeu", "provider": "espn",
+             "espn_slug": "uefa.super_cup"},
+            # The national team. `teams` (not `video_teams`) because the rest of
+            # Europe's fixtures are not this channel's subject at all — they
+            # should not even reach the round-up.
+            {"key": "naciones", "provider": "espn",
+             "espn_slug": "uefa.nations", "teams": SELECCION},
+            {"key": "euroq", "provider": "espn",
+             "espn_slug": "uefa.euroq", "teams": SELECCION},
+            {"key": "euro", "provider": "espn",
+             "espn_slug": "uefa.euro", "teams": SELECCION},
+            {"key": "amistosos", "provider": "espn",
+             "espn_slug": "fifa.friendly", "teams": SELECCION},
         ],
         "mode": "latest",
         "scorers": "full",
@@ -179,6 +253,80 @@ COMPETITIONS = {
         "name_es": "Europa League", "article": "la", "tags": ["#EuropaLeague", "#UEL"],
         "digest": "matchday", "aliases": ["europa league"],
     },
+    "conference": {
+        "label": "UEFA Conference League (temporada actual)",
+        "provider": "espn", "espn_slug": "uefa.europa.conf", "mode": "latest",
+        "scorers": "full",
+        "name_es": "Conference League", "article": "la",
+        "tags": ["#ConferenceLeague", "#UECL"],
+        "digest": "matchday", "aliases": ["conference league"],
+    },
+    "supercopa_es": {
+        "label": "Supercopa de España (temporada actual)",
+        "provider": "espn", "espn_slug": "esp.super_cup", "mode": "latest",
+        "scorers": "full",
+        "name_es": "Supercopa de España", "article": "la", "tags": ["#Supercopa"],
+        "logo": "assets/logos/laliga.png",
+        "digest": "daily",          # four teams over one week, each day its own
+        # ESPN reports it as "Spanish Supercopa". A bare "supercopa" would also
+        # swallow the Argentine and Brazilian ones, handing them these hashtags.
+        "aliases": ["spanish supercopa", "supercopa de espana", "supercopa de españa"],
+    },
+    "supercopa_eu": {
+        "label": "Supercopa de Europa (UEFA Super Cup)",
+        "provider": "espn", "espn_slug": "uefa.super_cup", "mode": "latest",
+        "scorers": "full",
+        "name_es": "Supercopa de Europa", "article": "la",
+        "tags": ["#SupercopaDeEuropa", "#UEFASuperCup"],
+        "digest": "daily",          # a single match
+        "aliases": ["uefa super cup", "super cup"],
+    },
+    # ── Selección española ──────────────────────────────────────────────
+    # Three presets rather than one, because the national-team calendar rotates:
+    # a Nations League autumn, then a qualifying campaign, then a tournament, and
+    # friendlies in whatever gap is left. All three are configured NOW so the
+    # rotation never needs a config change — a competition that is not being
+    # played simply returns no fixtures.
+    "naciones": {
+        "label": "UEFA Nations League (selección española)",
+        "provider": "espn", "espn_slug": "uefa.nations", "mode": "latest",
+        "scorers": "full",
+        "name_es": "Liga de Naciones", "article": "la",
+        "tags": ["#SelecciónEspañola", "#NationsLeague"],
+        "digest": "daily",          # all of Europe plays the same three days
+        "aliases": ["nations league", "liga de naciones"],
+    },
+    "euroq": {
+        "label": "Clasificación para la Eurocopa (selección española)",
+        "provider": "espn", "espn_slug": "uefa.euroq", "mode": "latest",
+        "scorers": "full",
+        "name_es": "clasificación para la Eurocopa", "article": "la",
+        "tags": ["#SelecciónEspañola", "#Eurocopa"],
+        "digest": "daily",
+        # Listed BEFORE "euro" below: ESPN names it "UEFA European Championship
+        # Qualifying", which contains the shorter name, and resolve() returns the
+        # first preset that matches. Reversed, every qualifier would resolve to
+        # the finals and be tagged as if it were the tournament itself.
+        "aliases": ["european championship qualifying", "euro qualifying"],
+    },
+    "euro": {
+        "label": "Eurocopa (selección española)",
+        "provider": "espn", "espn_slug": "uefa.euro", "mode": "today",
+        "scorers": "full",
+        "name_es": "Eurocopa", "article": "la",
+        "tags": ["#Eurocopa", "#SelecciónEspañola"],
+        "digest": "daily",          # a tournament plays every day
+        "aliases": ["european championship", "eurocopa"],
+    },
+    "amistosos": {
+        "label": "Amistosos de selecciones (selección española)",
+        "provider": "espn", "espn_slug": "fifa.friendly", "mode": "latest",
+        "scorers": "full",
+        "name_es": "un amistoso internacional",
+        "tags": ["#SelecciónEspañola", "#Amistoso"],
+        "digest": "daily",
+        "aliases": ["international friendly"],
+    },
     "primeira": {
         "label": "Primeira Liga (Portugal, temporada actual)",
         "provider": "espn", "espn_slug": "por.1", "mode": "latest", "scorers": "full",
@@ -264,6 +412,23 @@ def resolve(competition: str) -> dict:
                    for a in preset.get("aliases", [])):
                 return preset
     return _UNKNOWN
+
+
+def key_for(competition: str) -> str:
+    """Preset KEY for a competition ('champions', 'copadelrey'), or '' when it is
+    not one we know.
+
+    `resolve` answers "what IS this competition"; this answers "what do we CALL
+    it internally", which is what a per-competition record filename needs — the
+    keys are short, stable and already filename-safe, unlike the reported name
+    ("UEFA Champions League" would have to be slugified, and would change the
+    day ESPN renames it).
+    """
+    preset = resolve(competition)
+    for key, value in COMPETITIONS.items():
+        if value is preset:
+            return key
+    return ""
 
 
 def name_es(competition: str) -> str:
