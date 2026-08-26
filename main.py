@@ -140,6 +140,14 @@ def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
     while True:
         try:
             for match in source.poll_finished(processed):
+                # A match can belong in the channel without deserving a video of
+                # its own — a first-round cup tie between two clubs nobody knows
+                # is covered by its round's recap and nothing else. Mark it
+                # processed anyway, or every pass would reconsider it forever.
+                if not source.wants_own_video(match):
+                    print(f"[scheduler] {match.scoreline} — round-up only, no reel")
+                    processed.add(match.fixture_id)
+                    continue
                 print(f"[scheduler] finished: {match.scoreline} — generating...")
                 run_match(cfg.id, match, do_video=True, do_upload=upload)
             _maybe_run_digest(cfg, source, upload)

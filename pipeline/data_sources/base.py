@@ -23,6 +23,17 @@ class FootballDataSource(ABC):
     def fixture(self, fixture_id) -> Match:
         """A single match with its goals populated (when available)."""
 
+    def wants_own_video(self, match: Match) -> bool:
+        """True when this match deserves a video of its own.
+
+        A single-competition source always says yes — everything it returns is
+        the channel's subject. Only a merged feed distinguishes, because it can
+        carry a competition it wants COVERED (in the round-up) without wanting
+        every one of its matches filmed; see MultiSource. Defined here so the
+        scheduler can ask any source without checking its type first.
+        """
+        return True
+
     def poll_finished(self, processed: set, day: str | None = None) -> list[Match]:
         """Finished matches not seen before (for the auto-scheduler).
 

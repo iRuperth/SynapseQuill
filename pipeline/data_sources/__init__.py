@@ -86,8 +86,13 @@ def get_data_source(cfg):
             if cls is None:
                 raise ValueError(f"Unknown provider '{sub}' in competition leg "
                                  f"'{spec.get('key')}'.")
+            # "teams" (a list) is the general form; "team" (a single club) is
+            # kept because a one-club leg reads better that way in the preset.
             legs.append(Leg(spec["key"], cls(_LegConfig(cfg, spec)),
-                            spec.get("team", "")))
+                            spec.get("teams") or spec.get("team", ""),
+                            video_teams=spec.get("video_teams", ""),
+                            per_match=spec.get("per_match", True),
+                            always_rounds=spec.get("always_rounds")))
         return MultiSource(legs)
 
     cls = _source_class(name)
