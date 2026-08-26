@@ -74,7 +74,7 @@ def _match_dates(cfg: BrandProfile, content_ids: list[str]) -> dict:
 _ROUND_END_CACHE: dict = {}
 
 
-def _round_end(cfg: BrandProfile, day: str) -> str:
+def _round_end(cfg: BrandProfile, day: str, competition: str = "") -> str:
     """Last calendar day of the round that opens on `day`.
 
     Memoised because it is not cheap and it is asked repeatedly: sorting calls
@@ -85,18 +85,28 @@ def _round_end(cfg: BrandProfile, day: str) -> str:
     """
     if not day:
         return ""
-    if day in _ROUND_END_CACHE:
-        return _ROUND_END_CACHE[day]
+    ck = (day, competition)
+    if ck in _ROUND_END_CACHE:
+        return _ROUND_END_CACHE[ck]
     try:
         from core import competitions
         from pipeline.data_sources import get_data_source
         from pipeline.digest import matchday_days
+
+        # Scope the round to the recap's OWN competition. On a feed carrying
+        # several of them the week has no empty day, so an unscoped walk would
+        # stretch every round to the look-back limit and sort every recap to the
+        # same late date — losing the ordering this function exists to produce.
+        ident = competition or cfg.COMPETITION
+        keep = None
+        if competition:
+            keep = lambda m: competitions.key_for(m.competition) == competition  # noqa: E731
         days = matchday_days(get_data_source(cfg), day,
-                             competitions.digest_mode(cfg.COMPETITION))
+                             competitions.digest_mode(ident), keep)
         end = max(days) if days else day
     except Exception:  # noqa: BLE001
         end = day       # a single-day round is the safe assumption
-    _ROUND_END_CACHE[day] = end
+    _ROUND_END_CACHE[ck] = end
     return end
 
 
@@ -118,7 +128,8 @@ def _sort_key(cfg: BrandProfile, content_id: str, dates: dict):
         # file, but publishing on that key would put the recap ahead of the
         # Saturday and Sunday games it summarises — a recap that appears before
         # the matches reads as broken.
-        return (_round_end(cfg, rec.get("day", "")) or "9999-99-99", 1, content_id)
+        return (_round_end(cfg, rec.get("day", ""), rec.get("competition", ""))
+                or "9999-99-99", 1, content_id)
     day = dates.get(content_id) or rec.get("date") or ""
     if not day:
         # Last resort only. Flagged rather than silent, because ordering by

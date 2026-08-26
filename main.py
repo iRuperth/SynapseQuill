@@ -70,40 +70,85 @@ _DIGEST_LOOKBACK_DAYS = 8
 def _maybe_run_digest(cfg: BrandProfile, source, upload: bool):
     """Build the digest for every recent ROUND whose fixtures have all finished.
 
-    What counts as a round comes from the competition preset: a World Cup day is
-    its own recap, while a LaLiga jornada spans Friday to Monday and must be ONE
-    recap. So each candidate day is first resolved to its round, and the round is
-    keyed by its first day — every day of a jornada maps to the same record file,
-    which is what stops a four-day round from producing four near-identical
-    digests. Today is excluded so a round is only summarised once fully played,
-    and the record file marks it done so it never re-generates."""
+    ONE RECAP PER COMPETITION, not per day. What counts as a round comes from the
+    competition preset: a World Cup day is its own recap, while a LaLiga jornada
+    spans Friday to Monday and must be ONE recap. So each candidate day is first
+    resolved to its round, and the round is keyed by its first day — every day of
+    a jornada maps to the same record file, which is what stops a four-day round
+    from producing four near-identical digests. Today is excluded so a round is
+    only summarised once fully played, and the record file marks it done so it
+    never re-generates.
+
+    The competitions are handled SEPARATELY because a channel carrying LaLiga
+    (Fri-Mon), the Champions League (Tue-Wed) and the Europa League (Thu) has no
+    empty day left in its week. Resolving a round against the whole feed would
+    swallow the lot into one seven-day "jornada" mixing four competitions under
+    one title. Each competition's round is delimited by its own fixtures.
+    """
     from datetime import date, timedelta
 
     from core import competitions
-    from pipeline.digest import matchday_days, run_daily_digest
+    from pipeline.digest import fixtures_of, matchday_days, run_daily_digest
 
-    mode = competitions.digest_mode(cfg.COMPETITION)
-    built: set[str] = set()
-    # Oldest first, so missed rounds are filled in chronological order. Skip
-    # today (offset 0): its games may still be in progress.
-    for offset in range(_DIGEST_LOOKBACK_DAYS, 0, -1):
-        d = date.today() - timedelta(days=offset)
-        days = matchday_days(source, d.isoformat(), mode)
-        anchor = days[0]
-        if anchor in built:
-            continue                            # same round, already handled
-        built.add(anchor)
-        if (cfg.CONTENT_DIR / f"digest_{anchor}_{_DIGEST_FORMAT}.json").exists():
-            continue                            # already built
-        # A round is only ready when EVERY day of it has games and all of them
-        # have finished — including a Monday-night closer still in progress.
-        fixtures = [m for day in days for m in source.fixtures_on(day)]
-        if not fixtures or not all(m.is_finished for m in fixtures):
-            continue                            # no games / still playing
-        print(f"[scheduler] round {anchor} complete ({len(fixtures)} matches) "
-              f"over {len(days)} day(s) — building the digest...")
-        run_daily_digest(cfg.id, anchor, _DIGEST_FORMAT, upload=upload or None,
-                         on_step=lambda step, msg: print(f"[digest:{step}] {msg}"))
+    # Which competitions actually played in the look-back window. Derived from
+    # the fixtures rather than from the legs, so a competition the feed picked up
+    # without a preset of its own still gets a recap instead of being dropped.
+    days_back = [(date.today() - timedelta(days=o)).isoformat()
+                 for o in range(_DIGEST_LOOKBACK_DAYS, 0, -1)]
+    present: dict[str, str] = {}
+    for d in days_back:
+        for m in source.fixtures_on(d) or []:
+            key = competitions.key_for(m.competition)
+            if key:
+                present.setdefault(key, m.competition)
+    if not present:
+        return
+
+    for comp_key in present:
+        mode = competitions.digest_mode(comp_key)
+        keep = _same_competition(comp_key)
+        built: set[str] = set()
+        # Oldest first, so missed rounds are filled in chronological order. Skip
+        # today (offset 0): its games may still be in progress.
+        for d in days_back:
+            days = matchday_days(source, d, mode, keep)
+            anchor = days[0]
+            if anchor in built:
+                continue                        # same round, already handled
+            built.add(anchor)
+            if _digest_exists(cfg, anchor, comp_key):
+                continue                        # already built
+            # A round is only ready when EVERY day of it has games and all of
+            # them have finished — including a Monday-night closer still running.
+            fixtures = [m for day in days for m in fixtures_of(source, day, keep)]
+            if not fixtures or not all(m.is_finished for m in fixtures):
+                continue                        # no games / still playing
+            print(f"[scheduler] {comp_key} round {anchor} complete "
+                  f"({len(fixtures)} matches) over {len(days)} day(s) — "
+                  f"building the digest...")
+            run_daily_digest(cfg.id, anchor, _DIGEST_FORMAT, upload=upload or None,
+                             competition=comp_key,
+                             on_step=lambda step, msg: print(f"[digest:{step}] {msg}"))
+
+
+def _same_competition(comp_key: str):
+    """Predicate keeping only the matches of one competition."""
+    from core import competitions
+    return lambda m: competitions.key_for(m.competition) == comp_key
+
+
+def _digest_exists(cfg: BrandProfile, anchor: str, comp_key: str) -> bool:
+    """True when this round's recap has already been built.
+
+    Also honours the PRE-COMPETITION record name (`digest_<anchor>_<fmt>.json`),
+    from when the channel carried a single competition and a round produced
+    exactly one recap. Those recaps are already on YouTube; treating their day as
+    unbuilt would generate a second copy of a video that is live, so a legacy
+    record blocks the anchor outright rather than only its own competition.
+    """
+    new = cfg.CONTENT_DIR / f"digest_{anchor}_{comp_key}_{_DIGEST_FORMAT}.json"
+    legacy = cfg.CONTENT_DIR / f"digest_{anchor}_{_DIGEST_FORMAT}.json"
+    return new.exists() or legacy.exists()
 
 
 # Ceiling for the scheduler's error backoff. Half an hour is long enough that a
