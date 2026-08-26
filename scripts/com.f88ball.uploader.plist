@@ -8,9 +8,9 @@
 
   StartInterval rather than KeepAlive: this job is meant to RUN AND EXIT. The
   YouTube API allows roughly six uploads a day, so a process that stayed alive
-  would spend the day sleeping. Waking every few hours, publishing what the
-  quota permits and exiting is the honest shape for it, and it means a crash
-  costs one cycle rather than the whole backlog.
+  would spend the day sleeping. Waking on a timer, publishing what the quota
+  permits and exiting is the honest shape for it, and it means a crash costs
+  one cycle rather than the whole backlog.
 -->
 <plist version="1.0">
 <dict>
@@ -23,22 +23,31 @@
         <string>__PROJECT_DIR__/scripts/f88ball_uploader.sh</string>
     </array>
 
-    <!-- 15 minutes. An idle pass is genuinely free on the YouTube side: it opens
-         no connection, imports no Google library and spends no quota, so there
-         is no reason to make a finished recap wait hours for its turn.
+    <!-- One minute, so a finished recap reaches the channel while the result is
+         still news. A match that lands seconds after a pass used to wait a full
+         quarter of an hour for the next one.
 
-         The floor is NOT set by YouTube. It is set by what a pass costs UPSTREAM
-         when something is pending: ordering a digest walks a whole round of
-         fixtures across ESPN and roninfc.fans, and that second one is a small
-         supporters site the data source deliberately polls gently. At 5 minutes
-         with a digest queued that is hundreds of scrapes a day of a community
-         server; at 15 it stays neighbourly while a new match recap still reaches
-         the channel within the quarter hour. -->
+         Nothing scales with this number the way it looks like it should:
+
+         An idle pass opens no connection, imports no Google library and spends
+         no quota — it lists a directory, reads a few JSON records and exits in
+         under a tenth of a second, which is 0.1% of one core on a ten-core
+         machine even at this interval.
+
+         Nor does it multiply scraping. Both upstream sources are bounded by
+         their OWN cache rather than by how often they are asked: ESPN holds a
+         finished day for six hours, and roninfc.fans — a small supporters site
+         that deserves the care — serves every date out of ONE listing document
+         held for fifteen minutes, so ordering a queued digest costs that site
+         at most four requests an hour whether we wake sixty times in it or four.
+
+         And passes cannot pile up: the run takes an exclusive lock and a second
+         one exits immediately rather than publishing the same backlog twice. -->
     <key>StartInterval</key>
-    <integer>900</integer>
+    <integer>60</integer>
 
     <!-- Run once at load too, so installing it starts publishing immediately
-         rather than four hours later. -->
+         rather than a cycle later. -->
     <key>RunAtLoad</key>
     <true/>
 
