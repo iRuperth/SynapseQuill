@@ -75,6 +75,36 @@ def upload_content(cfg: BrandProfile, content_id: str) -> dict:
     record["youtube_privacy"] = privacy
     if rec_path.exists() or record:
         rec_path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # Free the local artifacts now that the upload is confirmed, exactly as the
+    # inline path in runner.py and digest.py does. This function is the DEFERRED
+    # path — the backlog uploader and the API's worker both come through here —
+    # and it used to skip the cleanup entirely, so anything published a pass
+    # later stayed on disk forever. That was invisible while nearly everything
+    # uploaded inline the moment it was generated; a channel whose daily output
+    # regularly exceeds the YouTube quota publishes most of its videos this way.
+    #
+    # cleanup_local_artifacts re-checks the url itself and deletes nothing
+    # unless it is a confirmed watch URL, so a failed upload keeps its only copy.
+    # The record JSON is never touched: it holds the url and is what stops the
+    # item being published twice.
+    from pipeline.publishers import cleanup_local_artifacts
+    # The .mp4 and this item's own crowd images. Deliberately NOT the match
+    # narration audio: single-match runs all write the same scratch
+    # "narration.mp3", so deleting it here — long after generation, from a
+    # different process — could pull the audio out from under a match being
+    # rendered right now. runner.py cleans it inline, where it is still ours.
+    artifacts = [vid, cfg.IMAGE_DIR / content_id]
+    if record.get("type") == "digest":
+        # A digest's heavy pieces are per-SEGMENT and named after each match, not
+        # after the digest itself.
+        for m in record.get("matches") or []:
+            fid = m.get("fixture_id")
+            if fid is None:
+                continue
+            artifacts.append(cfg.OUTPUT_DIR / f"seg_{fid}.mp3")
+            artifacts.append(cfg.IMAGE_DIR / f"match_{fid}")
+    cleanup_local_artifacts(url, artifacts)
     return {"ok": True, "youtube_url": url, "privacy": privacy}
 
 
