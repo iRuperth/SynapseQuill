@@ -28,6 +28,12 @@ CancelCb = Callable[[], bool]
 
 # Per-format limits.
 _REEL_MAX_MATCHES = 6    # 6 x ~28s ≈ under 3 minutes
+# Ceiling for the long horizontal recap. It used to have none, which was fine
+# while the channel carried one league: a full LaLiga jornada is 10 matches. A
+# cup round is not — the Copa del Rey opens with 25 ties on a single Wednesday,
+# and at up to 90s each that is a 35-minute video nobody watches to the end.
+# 12 clears a whole jornada with room to spare.
+_YT_MAX_MATCHES = 12
 _REEL_MAX_SEG = 28       # hard cap per segment (seconds)
 _YT_MAX_SEG = 90         # generous cap for the long format
 
@@ -271,10 +277,14 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
     if not finished:
         return {"status": "empty", "message": f"No finished matches for {day}"}
 
-    # Cap how many matches fit for the reel (3 min / 25s ≈ 6). The horizontal
-    # youtube digest has no cap — it covers every match of the round.
-    if fmt.key == "reel":
-        finished = finished[:_REEL_MAX_MATCHES]
+    # Cap how many matches fit (3 min / 25s ≈ 6 for the reel; see _YT_MAX_MATCHES
+    # for the long cut). Say so out loud when it bites: a recap that silently
+    # drops half a cup round still calls itself the round's recap.
+    cap = _REEL_MAX_MATCHES if fmt.key == "reel" else _YT_MAX_MATCHES
+    if len(finished) > cap:
+        on_step("fetch", f"{len(finished)} matches in this round — covering the "
+                         f"first {cap}, leaving out {len(finished) - cap}")
+        finished = finished[:cap]
     style = "digest_short" if fmt.key == "reel" else "digest_long"
     seg_cap = _REEL_MAX_SEG if fmt.key == "reel" else _YT_MAX_SEG
 
