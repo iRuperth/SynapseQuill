@@ -1061,7 +1061,21 @@ def youtube_metadata(match: Match, *, language: str = "es", provider: str | None
         "scoreline. Keep it under 85 characters. Do NOT name the stadium or venue. "
         "Do NOT add hashtags or emojis. "
         "Use only the given facts: exact player names, card colours, goal types "
-        "(penalty / own goal) and body parts (header vs left/right foot). JSON only."
+        "(penalty / own goal) and body parts (header vs left/right foot). "
+        # A published description called Real Madrid "el equipo de Carlo
+        # Ancelotti" a season after he left. The facts carry no coach at all, so
+        # the model filled the gap from training data that had gone stale — the
+        # kind of detail a model is most confident and most often wrong about.
+        "NEVER name a coach, manager or referee: they are not in the facts, and "
+        "whatever you remember about who manages a club is probably out of date. "
+        "Name a person ONLY if these facts name them. "
+        # Same failure, different shape: asked not to name a manager, the model
+        # reached for "el equipo rojizo" — a kit colour, for a club that plays in
+        # blue and white. Club colours, nicknames and hometowns are all things it
+        # half-remembers and states with confidence, and none of them are here.
+        "Do NOT describe a club by its kit colours, its nickname or its city "
+        "unless these facts state them. Call each side by the name given above, "
+        "or as the home or the away side. JSON only."
         + (f"\nA previous draft was rejected for: {feedback}. Fix exactly that."
            if feedback else "")
     )
