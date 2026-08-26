@@ -49,6 +49,26 @@ _CARD_REASON_RE = re.compile(
     r"\s+for\s+(.+?)\s*\.?\s*$", re.IGNORECASE)
 
 
+def _round_slug(season_name: str | None) -> str:
+    """Knockout stage from the summary endpoint's season name.
+
+    The SCOREBOARD gives the stage ready-made in season.slug ("quarterfinals").
+    The SUMMARY endpoint does not carry that slug at all — it only names the
+    season in prose, "2025-26 Spanish Copa del Rey, Quarterfinals", with the
+    stage after the comma. Slugifying that tail reproduces the scoreboard's
+    vocabulary exactly (verified across every stage of both the Copa del Rey and
+    the Champions League, including "Knockout Round Playoffs"), which is what
+    lets both code paths populate Match.round with the SAME strings — a filter
+    keyed on "final" must not depend on which call built the Match.
+
+    Returns "" when there is no comma, i.e. a plain league season with no stage.
+    """
+    name = (season_name or "").strip()
+    if "," not in name:
+        return ""
+    return re.sub(r"[^a-z0-9]+", "-", name.rsplit(",", 1)[1].strip().lower()).strip("-")
+
+
 def _card_reason(text: str | None) -> str:
     m = _CARD_REASON_RE.search((text or "").strip())
     return m.group(1).strip() if m else ""
@@ -210,6 +230,7 @@ class EspnSource(FootballDataSource):
             country=(venue.get("address") or {}).get("country", "") or "",
             competition=(ev.get("league") or {}).get("name", "")
             or self._league_name(ev),
+            round=((ev.get("season") or {}).get("slug") or ""),
             date=(ev.get("date", "") or "")[:10],
             kickoff=ev.get("date", "") or "",   # full ISO datetime (UTC)
         )
@@ -292,6 +313,7 @@ class EspnSource(FootballDataSource):
             city=(venue.get("address") or {}).get("city", "") or "",
             country=(venue.get("address") or {}).get("country", "") or "",
             competition=league.get("name", "") or "",
+            round=_round_slug((header.get("season") or {}).get("name")),
             date=(header.get("date") or comp.get("date", "") or "")[:10],
             kickoff=header.get("date") or comp.get("date", "") or "",
         )

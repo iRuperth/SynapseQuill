@@ -65,6 +65,11 @@ class Match:
     city: str = ""
     country: str = ""
     competition: str = ""          # real league/cup name (not hardcoded)
+    # Stage within a knockout competition, as the provider names it:
+    # "league-phase", "round-of-32", "quarterfinals", "semifinals", "final".
+    # Empty for a plain league fixture and for sources that do not report it,
+    # so callers must treat "" as "unknown", never as "an early round".
+    round: str = ""
     date: str = ""                 # YYYY-MM-DD
     kickoff: str = ""              # full ISO datetime in UTC, e.g. 2026-06-08T19:00Z
     goals: list[Goal] = field(default_factory=list)
