@@ -25,6 +25,7 @@ because these ids become filenames, and ":" is displayed as "/" by the macOS
 Finder.
 """
 
+import re
 import unicodedata
 
 from pipeline.match_monitor import Match
@@ -38,6 +39,15 @@ def _fold(s: str) -> str:
                    if not unicodedata.combining(c)).strip()
 
 
+def _words(name: str) -> set:
+    """Fold a club name to its set of words, punctuation dropped.
+
+    "Rōnin F.C." and "RONIN FC" both become {"ronin", "f", "c"}, so the same
+    club spelled differently by two providers still compares equal.
+    """
+    return {w for w in re.split(r"[^a-z0-9]+", _fold(name)) if w}
+
+
 class Leg:
     """One source in the feed, optionally narrowed to a single club."""
 
@@ -47,15 +57,21 @@ class Leg:
         self.team = team
 
     def wants(self, match: Match) -> bool:
-        """True when this match belongs in the feed. No team -> everything."""
+        """True when this match belongs in the feed. No team -> everything.
+
+        Matched on WHOLE WORDS, subset either way: the provider may print
+        "Rōnin F.C." where the config says "Rōnin FC", or a long official name
+        against a short one, so neither side can be required to be complete.
+        Comparing raw substrings instead is wrong in a way that publishes real
+        mistakes — "ronin" is a substring of "Gironina", so a Gironina fixture
+        the club never played was picked up as one of theirs and would have been
+        narrated as such. Both sides are folded, so accents never decide a match.
+        """
         if not self.team:
             return True
-        want = _fold(self.team)
-        # Substring either way: the provider may print "Rōnin F.C." where the
-        # config says "Rōnin FC", or the short "Ronin" against a long official
-        # name. Both sides are folded, so accents never decide a match.
-        return any(want in _fold(side) or _fold(side) in want
-                   for side in (match.home, match.away) if side)
+        want = _words(self.team)
+        return any(want <= side or side <= want
+                   for side in map(_words, (match.home, match.away)) if side)
 
     def tag(self, match: Match) -> Match:
         """Namespace the fixture id so ids from different providers can't clash."""
