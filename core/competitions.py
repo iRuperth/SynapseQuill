@@ -176,16 +176,57 @@ COMPETITIONS = {
     # -> Tercera -> ...). Matching them all here means a promotion needs no code
     # change, and #RoninFC leads either way because that — not the division — is
     # what an Ibai viewer searches for.
-    "catalana": {
-        "label": "Ligas catalanas (Rōnin FC — Tercera Catalana)",
+    # ONE PRESET PER TIER, not one for all of them. They were a single preset
+    # while only one source existed, and the Spanish name on it was the literal
+    # string "Tercera Catalana" — so a Quarta Catalana match resolved to that
+    # preset and was narrated, titled and hashtagged as Tercera. The club is
+    # climbing (Quarta in 2025/26, Tercera in 2026/27), which is exactly when a
+    # hardcoded division name goes stale, and the division is a FACT about the
+    # match, stated with confidence in a published title.
+    #
+    # Splitting them keeps the property the single preset was there for — a
+    # promotion still needs no code change, because every tier is already
+    # configured and the club simply resolves to a different one — while making
+    # the name it resolves to the true one. #RoninFC leads either way, because
+    # that, not the division, is what an Ibai viewer searches for.
+    #
+    # Each tier is named in full. A bare "catalana" would also swallow "Lliga
+    # Catalana" and any other competition of the region. Both spellings of the
+    # numeral are listed because the two Rōnin sources disagree: the acta URL
+    # says "tercera-catalana", the community site says "3ª Catalana.".
+    "primera_catalana": {
+        "label": "Primera Catalana (Rōnin FC)",
+        "provider": "fcf", "mode": "latest", "scorers": "goals",
+        "name_es": "Primera Catalana", "article": "la",
+        "tags": ["#RoninFC", "#PrimeraCatalana"],
+        "digest": "matchday",
+        "aliases": ["primera catalana", "1a catalana", "1ª catalana"],
+    },
+    "segona_catalana": {
+        "label": "Segunda Catalana (Rōnin FC)",
+        "provider": "fcf", "mode": "latest", "scorers": "goals",
+        "name_es": "Segunda Catalana", "article": "la",
+        "tags": ["#RoninFC", "#SegundaCatalana"],
+        "digest": "matchday",
+        "aliases": ["segona catalana", "segunda catalana",
+                    "2a catalana", "2ª catalana"],
+    },
+    "tercera_catalana": {
+        "label": "Tercera Catalana (Rōnin FC — temporada 2026/27)",
         "provider": "fcf", "mode": "latest", "scorers": "goals",
         "name_es": "Tercera Catalana", "article": "la",
         "tags": ["#RoninFC", "#TerceraCatalana"],
         "digest": "matchday",
-        # Each tier is named in full. A bare "catalana" would also swallow
-        # "Lliga Catalana" and any other competition of the region.
-        "aliases": ["tercera catalana", "quarta catalana", "cuarta catalana",
-                    "segona catalana", "segunda catalana", "primera catalana"],
+        "aliases": ["tercera catalana", "3a catalana", "3ª catalana"],
+    },
+    "quarta_catalana": {
+        "label": "Cuarta Catalana (Rōnin FC — temporada 2025/26)",
+        "provider": "fcf", "mode": "latest", "scorers": "goals",
+        "name_es": "Cuarta Catalana", "article": "la",
+        "tags": ["#RoninFC", "#CuartaCatalana"],
+        "digest": "matchday",
+        "aliases": ["quarta catalana", "cuarta catalana",
+                    "4a catalana", "4ª catalana"],
     },
     "copa_catalunya": {
         "label": "Copa Catalunya Absoluta (Rōnin FC)",
@@ -202,7 +243,11 @@ COMPETITIONS = {
         "provider": "fcf", "mode": "latest", "scorers": "none",
         "name_es": "un amistoso", "tags": ["#RoninFC", "#Pretemporada"],
         "digest": "matchday",
-        "aliases": ["amistoso", "amistos"],
+        # The plural is listed separately because these are matched as WHOLE
+        # words: the community site says "Partidos Amistosos", and \bamistoso\b
+        # does not match inside "amistosos", so without it a pre-season friendly
+        # would fall through to the generic #Futbol.
+        "aliases": ["amistoso", "amistos", "amistosos"],
     },
     # Other major football competitions — all via ESPN (free, with scorers +
     # minutes), CURRENT season. Each preset is just an ESPN slug; the whole
