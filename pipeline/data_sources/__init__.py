@@ -12,11 +12,19 @@ DATA_PROVIDER (env / profile):
                   seasons 2021-2024 (no current season).
     thesportsdb   TheSportsDB — current scores (free key 123) but no scorers.
     fcf           Federació Catalana de Futbol — Catalan amateur leagues
-                  (Tercera Catalana), the only public source for a club ESPN
-                  does not cover. Final scores only, no scorers.
+                  (Tercera Catalana), for a club ESPN does not cover. Reads the
+                  federation acta, so it DOES carry scorers, minutes and cards.
+    ronindigital  The same club's community site. Only the scoreline, crests and
+                  kickoff — no scorers. Its value is that it is kept current:
+                  it is the backup that stops a season going unnoticed when the
+                  acta source falls behind. See ronin_digital.py.
     multi         SEVERAL of the above merged into one feed, each leg optionally
                   narrowed to one club. This is what lets a channel cover all of
                   LaLiga AND one amateur club, from two unrelated providers.
+
+A leg may also name a `fallback` provider. That is a DIFFERENT relationship from
+a leg: both report the same club, so they are paired by fallback.FallbackSource
+(preferred source wins) instead of merged, or the club would appear twice.
 
 `get_data_source(cfg)` returns the provider selected for a profile.
 """
@@ -40,6 +48,9 @@ def _source_class(name: str):
     if name == "fcf":
         from .fcf import FcfSource
         return FcfSource
+    if name == "ronindigital":
+        from .ronin_digital import RoninDigitalSource
+        return RoninDigitalSource
     return _SOURCES.get(name)
 
 
@@ -86,9 +97,21 @@ def get_data_source(cfg):
             if cls is None:
                 raise ValueError(f"Unknown provider '{sub}' in competition leg "
                                  f"'{spec.get('key')}'.")
+            source = cls(_LegConfig(cfg, spec))
+            # A second provider for the SAME club, used only when the preferred
+            # one has nothing for that day. Paired rather than added as its own
+            # leg: two legs would put the club in the feed twice.
+            backup_name = (spec.get("fallback") or "").lower()
+            if backup_name:
+                backup_cls = _source_class(backup_name)
+                if backup_cls is None:
+                    raise ValueError(f"Unknown fallback provider '{backup_name}' "
+                                     f"in competition leg '{spec.get('key')}'.")
+                from .fallback import FallbackSource
+                source = FallbackSource(source, backup_cls(_LegConfig(cfg, spec)))
             # "teams" (a list) is the general form; "team" (a single club) is
             # kept because a one-club leg reads better that way in the preset.
-            legs.append(Leg(spec["key"], cls(_LegConfig(cfg, spec)),
+            legs.append(Leg(spec["key"], source,
                             spec.get("teams") or spec.get("team", ""),
                             video_teams=spec.get("video_teams", ""),
                             per_match=spec.get("per_match", True),

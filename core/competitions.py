@@ -125,7 +125,13 @@ COMPETITIONS = {
         "legs": [
             # The channel's base: every match, always filmed.
             {"key": "laliga", "provider": "espn", "espn_slug": "esp.1"},
-            {"key": "ronin", "provider": "fcf", "team": "Rōnin"},
+            # Two providers for ONE club, not two legs. The acta source is
+            # preferred because it alone carries scorers and cards; the community
+            # site is the safety net, because the acta source held nothing at all
+            # of the 2026/27 season while the club's calendar was already public
+            # elsewhere. See data_sources/fallback.py.
+            {"key": "ronin", "provider": "fcf", "team": "Rōnin",
+             "fallback": "ronindigital"},
             # Spanish cups.
             {"key": "copadelrey", "provider": "espn",
              "espn_slug": "esp.copa_del_rey", "video_teams": CLUBES_GRANDES},
