@@ -1,0 +1,2 @@
+bash scripts/f88ball_scheduler_ctl.sh install
+bash scripts/f88ball_uploader_ctl.sh install
