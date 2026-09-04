@@ -26,6 +26,12 @@ Preset keys
     logo        corner logo drawn on every frame (relative to the repo root)
     digest      "matchday" — a round spans several days (leagues: Fri-Mon)
                 "daily"    — every day is its own round (a tournament)
+    round_up    False to never build a round recap for this competition. Default
+                True. A recap exists to cover a round the channel does NOT film
+                match by match; where the channel follows a single club, every
+                one of its matches already gets its own video, so the "round"
+                holds exactly that one match and the recap is a second upload of
+                a game already published.
     hide_venue  True to never name the stadium (the World Cup rule)
     aliases     lower-case fragments of the competition name AS THE DATA SOURCE
                 reports it, so a Match can be traced back to its preset
@@ -199,7 +205,7 @@ COMPETITIONS = {
         "provider": "fcf", "mode": "latest", "scorers": "goals",
         "name_es": "Primera Catalana", "article": "la",
         "tags": ["#RoninFC", "#PrimeraCatalana"],
-        "digest": "matchday",
+        "digest": "matchday", "round_up": False,
         "aliases": ["primera catalana", "1a catalana", "1ª catalana"],
     },
     "segona_catalana": {
@@ -207,7 +213,7 @@ COMPETITIONS = {
         "provider": "fcf", "mode": "latest", "scorers": "goals",
         "name_es": "Segunda Catalana", "article": "la",
         "tags": ["#RoninFC", "#SegundaCatalana"],
-        "digest": "matchday",
+        "digest": "matchday", "round_up": False,
         "aliases": ["segona catalana", "segunda catalana",
                     "2a catalana", "2ª catalana"],
     },
@@ -216,7 +222,7 @@ COMPETITIONS = {
         "provider": "fcf", "mode": "latest", "scorers": "goals",
         "name_es": "Tercera Catalana", "article": "la",
         "tags": ["#RoninFC", "#TerceraCatalana"],
-        "digest": "matchday",
+        "digest": "matchday", "round_up": False,
         "aliases": ["tercera catalana", "3a catalana", "3ª catalana"],
     },
     "quarta_catalana": {
@@ -224,7 +230,7 @@ COMPETITIONS = {
         "provider": "fcf", "mode": "latest", "scorers": "goals",
         "name_es": "Cuarta Catalana", "article": "la",
         "tags": ["#RoninFC", "#CuartaCatalana"],
-        "digest": "matchday",
+        "digest": "matchday", "round_up": False,
         "aliases": ["quarta catalana", "cuarta catalana",
                     "4a catalana", "4ª catalana"],
     },
@@ -233,7 +239,7 @@ COMPETITIONS = {
         "provider": "fcf", "mode": "latest", "scorers": "goals",
         "name_es": "Copa Catalunya", "article": "la",
         "tags": ["#RoninFC", "#CopaCatalunya"],
-        "digest": "matchday",
+        "digest": "matchday", "round_up": False,
         "aliases": ["copa catalunya"],
     },
     # A pre-season friendly. Its acta carries no goals at all, so it is named
@@ -242,7 +248,7 @@ COMPETITIONS = {
         "label": "Amistosos (Rōnin FC)",
         "provider": "fcf", "mode": "latest", "scorers": "none",
         "name_es": "un amistoso", "tags": ["#RoninFC", "#Pretemporada"],
-        "digest": "matchday",
+        "digest": "matchday", "round_up": False,
         # The plural is listed separately because these are matched as WHOLE
         # words: the community site says "Partidos Amistosos", and \bamistoso\b
         # does not match inside "amistosos", so without it a pre-season friendly
@@ -519,6 +525,17 @@ def tags_for(competition: str) -> list[str]:
 def hides_venue(competition: str) -> bool:
     """True when the stadium must never be named (the World Cup rule)."""
     return bool(resolve(competition).get("hide_venue"))
+
+
+def has_round_up(competition: str) -> bool:
+    """True when this competition gets a round recap of its own.
+
+    False for the ones the channel follows a SINGLE club in. Their round holds
+    exactly that club's one match — already published as its own video — so the
+    recap would be a second upload of the same game under a title claiming to
+    summarise a jornada it never saw.
+    """
+    return bool(resolve(competition).get("round_up", True))
 
 
 def digest_mode(competition: str) -> str:

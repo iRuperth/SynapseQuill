@@ -99,7 +99,10 @@ def _maybe_run_digest(cfg: BrandProfile, source, upload: bool):
     for d in days_back:
         for m in source.fixtures_on(d) or []:
             key = competitions.key_for(m.competition)
-            if key:
+            # A competition the channel follows a single club in gets no recap:
+            # its "round" is that club's one match, which already has a video of
+            # its own, so the recap would publish the same game twice.
+            if key and competitions.has_round_up(key):
                 present.setdefault(key, m.competition)
     if not present:
         return
