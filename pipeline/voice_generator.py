@@ -33,6 +33,84 @@ def _collapse_stretched(text: str) -> str:
     return re.sub(r"(.)\1{2,}", r"\1", text)
 
 
+# English words a Spanish narration carries anyway, and how to spell them so a
+# Spanish voice says them right. Edge-TTS's neural voices accept no SSML
+# <phoneme> and do not code-switch: es-ES-Alvaro reads "League" with Spanish
+# letter values ("le-a-gu-e") and "like" as "LEE-keh". Since the engine gives us
+# no other lever, the spelling IS the lever — hand it a Spanish spelling that
+# sounds like the English word.
+#
+# Earned its place by frequency, not by guesswork: "like" appears 162 times
+# across the generated narrations (every video ends with "deja tu like") and
+# "League" in every Champions and Europa League recap.
+#
+# Proper nouns are deliberately absent. A stadium or a player's name is a rabbit
+# hole with no correct answer — "Signal Iduna Park" has no Spanish spelling that
+# is more right than the current one — and a bad guess there is worse than the
+# accent it replaces.
+_ES_RESPELL = {
+    "league": "lig",
+    "like": "laik",
+    "likes": "laiks",
+    "hat-trick": "jat-trik",
+    "hat trick": "jat trik",
+    "penalty": "penalti",
+    "penalties": "penaltis",
+    "show": "chou",
+}
+
+# Respellings that must NOT reach the subtitles: "lig" and "laik" are spoken
+# spellings, not words, and burning them into the video would trade a
+# mispronounced word for a misspelled one. "penalti" is missing on purpose —
+# it is the real Spanish word, so it is already the right thing to SHOW.
+_SPEECH_ONLY = {"lig", "laik", "laiks", "jat-trik", "jat trik", "chou"}
+
+# Longest first so "hat trick" wins over a bare "hat", and word-bounded so
+# "liga" and "aliketa" are never touched.
+_RESPELL_ALT = "|".join(re.escape(k) for k in
+                        sorted(_ES_RESPELL, key=len, reverse=True))
+_RESPELL_RE = re.compile(rf"\b(?:{_RESPELL_ALT})\b", re.IGNORECASE)
+_RESTORE = {v: k for k, v in _ES_RESPELL.items() if v in _SPEECH_ONLY}
+_RESTORE_ALT = "|".join(re.escape(k) for k in
+                        sorted(_RESTORE, key=len, reverse=True))
+_RESTORE_RE = re.compile(rf"\b(?:{_RESTORE_ALT})\b", re.IGNORECASE)
+
+
+def _match_case(sample: str, word: str) -> str:
+    """Give `word` the capitalisation `sample` was written with, so a shouted
+    '¡Dale LIKE!' stays shouted and 'Champions League' keeps its capital."""
+    if sample.isupper() and len(sample) > 1:
+        return word.upper()
+    if sample[:1].isupper():
+        return word[:1].upper() + word[1:]
+    return word
+
+
+def _respell_for_speech(text: str, language: str) -> str:
+    """Rewrite the English words above with Spanish spellings, for the AUDIO.
+
+    Spanish only: an English voice reading an English narration needs none of
+    this, and applying it there would break the words it is meant to fix.
+    """
+    if not (language or "").lower().startswith("es"):
+        return text
+    return _RESPELL_RE.sub(
+        lambda m: _match_case(m.group(0), _ES_RESPELL[m.group(0).lower()]), text)
+
+
+def _restore_spelling(cues: list[dict]) -> list[dict]:
+    """Put the real words back into the subtitle cues.
+
+    The TTS engines derive their cue text from the string we HAND them, so
+    without this the burned-in subtitles would read "deja tu laik".
+    """
+    for c in cues:
+        c["text"] = _RESTORE_RE.sub(
+            lambda m: _match_case(m.group(0), _RESTORE[m.group(0).lower()]),
+            c.get("text", ""))
+    return cues
+
+
 def _is_high_energy(text: str) -> bool:
     """True when the narration reads like an excited shout (many CAPS / '¡!')."""
     shouts = text.count("¡") + text.count("!")
@@ -187,17 +265,30 @@ def synthesize(cfg: BrandProfile, text: str, name: str = "narration") -> tuple[P
         pitch = _bump_hz(pitch, 6)
 
     provider = cfg.TTS_PROVIDER
+    # Spanish spellings for the English words the narration carries, so the
+    # voice says "lig" and "laik" rather than reading them as Spanish. NOT for
+    # ElevenLabs: its multilingual model code-switches on its own, so handing it
+    # a phonetic spelling would break a word it already pronounces correctly.
+    if provider != "elevenlabs":
+        spoken = _respell_for_speech(text, cfg.LANGUAGE)
+    else:
+        spoken = text
+
     if provider == "edge":
-        cues = _edge(text, cfg.TTS_VOICE, rate, audio_path, pitch=pitch)
+        cues = _edge(spoken, cfg.TTS_VOICE, rate, audio_path, pitch=pitch)
     elif provider == "elevenlabs":
         # ElevenLabs has no SSML prosody, so the goal-shout boost above doesn't
         # apply; the emotion comes from the voice itself.
         model = getattr(cfg, "TTS_MODEL", "eleven_multilingual_v2")
-        cues = _elevenlabs(text, cfg.TTS_VOICE, audio_path, model=model)
+        cues = _elevenlabs(spoken, cfg.TTS_VOICE, audio_path, model=model)
     elif provider == "gtts":
-        cues = _gtts(text, cfg.LANGUAGE, audio_path)
+        cues = _gtts(spoken, cfg.LANGUAGE, audio_path)
     else:  # piper or unknown -> try edge as the safe default
-        cues = _edge(text, cfg.TTS_VOICE, rate, audio_path, pitch=pitch)
+        cues = _edge(spoken, cfg.TTS_VOICE, rate, audio_path, pitch=pitch)
+
+    # The cues came back spelled the way the ENGINE was fed; the viewer must
+    # read the real words.
+    cues = _restore_spelling(cues)
 
     # Sentence-level cues are already readable lines; only word-level cues
     # need grouping into ~8-word subtitle lines.
