@@ -37,6 +37,7 @@ from core.brand_config import BrandProfile  # noqa: E402
 from pipeline.upload_manager import (  # noqa: E402
     blocked_uploads,
     pending_uploads,
+    rejudge,
     revalidate_held,
     upload_content,
 )
@@ -257,6 +258,9 @@ def main() -> int:
     ap.add_argument("--publish-held", nargs="+", metavar="ID", default=None,
                     help="publish these held-back ids after a human reviewed "
                          "them (bypasses the guardrail gate for those ids ONLY)")
+    ap.add_argument("--rejudge", nargs="+", metavar="ID", default=None,
+                    help="re-run the LLM judge on these held ids against "
+                         "today's facts block, and keep the new verdict")
     args = ap.parse_args()
 
     cfg = BrandProfile(args.profile)
@@ -296,6 +300,33 @@ def main() -> int:
             if cid != args.publish_held[-1]:
                 time.sleep(_GAP_SECONDS)
         print(f"[upload] released {done} held video(s)")
+        return 0
+
+    # A judge verdict is deliberately frozen — see revalidate() — because
+    # re-rolling an opinion until it agrees is not verification. But the verdict
+    # is only as good as the FACTS it was shown, and a Rōnin 4-0 was called
+    # ungrounded by a facts block that told the judge the match finished 0-0.
+    # Once that block is fixed nothing else can release those videos, so the
+    # escape is explicit, per-id and human-invoked rather than automatic.
+    if args.rejudge:
+        held = dict(blocked_uploads(cfg))
+        for cid in args.rejudge:
+            if cid not in held:
+                print(f"[upload] {cid} is not held back — nothing to re-judge")
+                continue
+            try:
+                moved = rejudge(cfg, cid)
+            except Exception as e:  # noqa: BLE001
+                print(f"[upload] FAILED to re-judge {cid}: {e}")
+                continue
+            if moved is None:
+                print(f"[upload] {cid} — the judge could not be re-run "
+                      f"(unreachable source or no narration); hold stands")
+            elif moved:
+                print(f"[upload] re-judged {cid} — still held: {'; '.join(moved)}")
+            else:
+                print(f"[upload] re-judged {cid} — the hold no longer applies "
+                      f"(was: {'; '.join(held[cid])}); queued for publishing")
         return 0
 
     # Re-check the held set against TODAY's guardrail and today's match data

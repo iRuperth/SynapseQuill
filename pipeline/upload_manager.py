@@ -250,6 +250,56 @@ def revalidate(cfg: BrandProfile, content_id: str, record: dict) -> dict | None:
     return updated if hold_reasons(updated) != hold_reasons(record) else None
 
 
+def rejudge(cfg: BrandProfile, content_id: str) -> list[str] | None:
+    """Re-run the LLM JUDGE on one held record and keep the new verdict.
+
+    revalidate() deliberately never touches the judge: re-rolling an opinion
+    until it agrees is not verification, and model drift alone could flip it.
+    This is the explicit, per-id, human-invoked exception, and it exists
+    because a verdict is only as good as the facts it was shown. A Rōnin 4-0
+    was called ungrounded by a facts block that told the judge the match had
+    finished 0-0 — the judge was reading the facts correctly and the facts were
+    wrong. Fixing the facts releases nothing on its own, because the verdict is
+    frozen in the record, so without this the video is held for good.
+
+    Returns the remaining hold reasons (empty when the video is now free to
+    publish), or None when the judge could not be re-run at all — an
+    unreachable data source or a record with no narration. Never returns a
+    verdict it did not actually obtain: a judge that errors or fails to parse
+    leaves the existing hold exactly as it was.
+    """
+    record = json.loads(_record_path(cfg, content_id).read_text(encoding="utf-8"))
+    narration = record.get("narration") or ""
+    if not narration or not content_id.startswith("match_"):
+        return None
+    try:
+        from pipeline.data_sources import get_data_source
+        match = get_data_source(cfg).fixture(content_id.removeprefix("match_"))
+    except Exception:               # noqa: BLE001 — unreachable source, keep holding
+        return None
+    if match is None or match.home_goals is None or match.away_goals is None:
+        return None
+
+    import copy
+
+    from agents.guardrail import llm_judge
+
+    judge = llm_judge(match, narration, cfg.LANGUAGE)
+    if not judge.get("parsed"):
+        return None                 # unusable answer is not a new verdict
+
+    updated = copy.deepcopy(record)
+    guard = updated.setdefault("guardrail", {})
+    guard["judge"] = judge
+    guard["passed"] = ((guard.get("facts") or {}).get("ok", True)
+                       and judge.get("grounded", False)
+                       and judge.get("language_ok", True))
+    updated["rejudged_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    _record_path(cfg, content_id).write_text(
+        json.dumps(updated, indent=2, ensure_ascii=False), encoding="utf-8")
+    return hold_reasons(updated)
+
+
 def revalidate_held(cfg: BrandProfile) -> list[tuple[str, list[str], list[str]]]:
     """Re-check everything a gate is holding, and persist any verdict that moved.
 
