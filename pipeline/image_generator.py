@@ -28,13 +28,38 @@ def _together_keys() -> list[str]:
     return keys
 
 
+# Together rejects a size it cannot tile: the FLUX-family endpoints demand a
+# multiple of 64 (FLUX.2 relaxes it to 16) anywhere between 128 and 2048. The
+# reel is 1080x1920 and 1080 is a multiple of NEITHER, so every crowd backdrop
+# was asked for at a width the API refuses. Snapping to 64 satisfies both
+# families at once, and the cost is nothing: the backdrop is resized to the
+# frame in animated_graphics.set_background() and then darkened to 38%, so the
+# 8px of extra width never survives to be seen.
+_SIZE_STEP = 64
+
+
+def _snap(px: int) -> int:
+    """Nearest size Together will accept: a multiple of 64 within [128, 2048]."""
+    return max(128, min(2048, round(px / _SIZE_STEP) * _SIZE_STEP))
+
+
 def _gen_together(prompt: str, width: int, height: int) -> bytes:
-    """Together.ai FLUX.1-schnell. Rotates through TOGETHER_API_KEY[_2,_3]."""
+    """Together.ai image generation. Rotates through TOGETHER_API_KEY[_2,_3].
+
+    The model is NOT pinned in code beyond the default below, because Together
+    retires serverless models without notice: FLUX.1-schnell (and its -Free
+    twin) stopped being served and every request 400'd with "non-serverless
+    model" long after the key itself was still fine. Keep TOGETHER_IMAGE_MODEL
+    pointing at something the /v1/models listing currently reports as type
+    "image".
+    """
     import base64
     keys = _together_keys()
     if not keys:
         raise RuntimeError("No TOGETHER_API_KEY in environment / .env")
-    model = os.getenv("TOGETHER_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell")
+    model = os.getenv("TOGETHER_IMAGE_MODEL",
+                      "Rundiffusion/Juggernaut-Lightning-Flux")
+    width, height = _snap(width), _snap(height)
     last = None
     for key in keys:
         r = requests.post(
@@ -45,6 +70,10 @@ def _gen_together(prompt: str, width: int, height: int) -> bytes:
             timeout=120,
         )
         if r.status_code in (429, 401, 402):
+            # Out of credit or throttled on THIS key — the next one may still
+            # have balance. A 400 is not retried: a bad model or a bad size is
+            # the same on every key, and swallowing it here is what hid a
+            # retired model behind a generic "all providers failed".
             last = r
             continue
         r.raise_for_status()
