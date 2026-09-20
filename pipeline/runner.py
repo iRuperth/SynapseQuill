@@ -179,9 +179,14 @@ def run_match(profile_id: str, match: Match, *,
     # unchecked). ordered_score=False: the title carries the final first and
     # the description may recount a running score last, so the play-by-play
     # 'last token is the final' rule does not apply here.
+    # summary=True: a title and a 300-character description are a summary, not
+    # a play-by-play, so they are not required to LABEL every penalty and own
+    # goal — only forbidden to invent one, or to state anything the data
+    # contradicts. Demanding completeness here burned all three regenerations
+    # on descriptions that were true.
     for attempt in range(3):
         meta_check = facts_check(match, f"{meta['title']}\n{meta['description']}",
-                                 cfg.LANGUAGE, ordered_score=False)
+                                 cfg.LANGUAGE, ordered_score=False, summary=True)
         if meta_check["ok"] or attempt == 2:
             break
         reasons = "; ".join(meta_check["issues"])

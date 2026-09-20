@@ -207,7 +207,11 @@ def revalidate(cfg: BrandProfile, content_id: str, record: dict) -> dict | None:
     if not content_id.startswith("match_") or record.get("upload_skipped"):
         return None                 # a digest carries many matches, not one
     narration = record.get("narration") or ""
-    if not narration:
+    meta = record.get("metadata") or {}
+    # A record with no narration can still be held by the METADATA gate, and
+    # returning early on the missing narration meant that hold was never
+    # re-checked at all — the one kind of hold this function exists to release.
+    if not narration and not (meta.get("title") or meta.get("description")):
         return None
     try:
         from pipeline.data_sources import get_data_source
@@ -222,21 +226,25 @@ def revalidate(cfg: BrandProfile, content_id: str, record: dict) -> dict | None:
     from agents.guardrail import facts_check
 
     updated = copy.deepcopy(record)
-    guard = updated.setdefault("guardrail", {})
-    guard["facts"] = facts_check(match, narration, cfg.LANGUAGE)
-    # The judge keeps its say: a narration it called ungrounded stays held even
-    # when every deterministic check now passes.
-    guard["passed"] = (guard["facts"]["ok"]
-                       and (guard.get("judge") or {}).get("grounded", True))
+    if narration:
+        guard = updated.setdefault("guardrail", {})
+        guard["facts"] = facts_check(match, narration, cfg.LANGUAGE)
+        # The judge keeps its say: a narration it called ungrounded stays held
+        # even when every deterministic check now passes.
+        guard["passed"] = (guard["facts"]["ok"]
+                           and (guard.get("judge") or {}).get("grounded", True))
 
     meta = updated.get("metadata") or {}
     if meta.get("title") or meta.get("description"):
         # ordered_score=False: a title carries the final FIRST and the
         # description may recount a running score last, so the narration's
         # "last token is the final" rule would false-fail here.
+        # summary=True for the same reason it is set at generation time: a
+        # description is not a transcript, and must match what generation would
+        # decide today or a re-check can never release what generation held.
         updated["metadata_guardrail"] = facts_check(
             match, f"{meta.get('title', '')}\n{meta.get('description', '')}",
-            cfg.LANGUAGE, ordered_score=False)
+            cfg.LANGUAGE, ordered_score=False, summary=True)
 
     updated["revalidated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     return updated if hold_reasons(updated) != hold_reasons(record) else None

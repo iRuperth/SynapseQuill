@@ -26,12 +26,29 @@ def _strip_accents(s: str) -> str:
                    if not unicodedata.combining(ch))
 
 
+# Invisible and non-ASCII-space characters the LLM emits freely — they appear
+# in 102 of 103 stored records. NFD does NOT remove them (a soft hyphen is not
+# a combining mark), so without this they survive _fold and silently defeat
+# every literal pattern they land inside. Both directions were broken by it: a
+# name written "Filip Kostić" never matched the feed's ASCII space, and a
+# "porterí­a" hid a correctly-narrated own goal from _OWN_WORDS — the same
+# way an invisible character inside "penalti" or "amarilla" would disable those
+# detectors outright.
+_TYPO_SPACES = {0x00A0: " ", 0x2009: " ", 0x200A: " ", 0x202F: " ", 0x2007: " ",
+                0x2011: "-", 0x00AD: "", 0x200B: "", 0x200C: "", 0x200D: "",
+                0xFEFF: ""}
+
+
 def _fold(s: str) -> str:
     """Accent-folded casefold — the only normal form every check shares.
     Provider feeds ('Santiago Gimenez') and Spanish prose ('Giménez') differ
     in accents constantly, so matching on the folded text is the only reliable
-    way to line a player's name up with how the narrator wrote it."""
-    return _strip_accents(s.casefold())
+    way to line a player's name up with how the narrator wrote it.
+
+    Typographic spaces and invisibles are folded out too: they are not
+    meaningful text, and every check that compares against a feed's plain
+    ASCII would otherwise miss on them."""
+    return _strip_accents(s.translate(_TYPO_SPACES).casefold())
 
 
 def _name_windows(name: str, folded_text: str) -> list[tuple[int, int]]:
@@ -42,13 +59,22 @@ def _name_windows(name: str, folded_text: str) -> list[tuple[int, int]]:
     fname = _fold(name)
     spans = [(m.start(), m.end())
              for m in re.finditer(rf"\b{re.escape(fname)}\b", folded_text)]
-    if spans:
-        return spans
+    # Both forms, not the full name ALONE when one is found. A narration
+    # introduces a player in full and then writes the bare surname at the
+    # event itself — "apareció Serhou Guirassy ... Guirassy lo convirtió al 85"
+    # — so stopping at the full-name hit checked a window that does not contain
+    # the moment being verified, and the penalty label sitting beside the
+    # surname was never seen.
     surname = fname.split()[-1]
-    if len(surname) < 4:
-        return []
-    return [(m.start(), m.end())
-            for m in re.finditer(rf"\b{re.escape(surname)}\b", folded_text)]
+    if len(surname) >= 4:
+        spans += [(m.start(), m.end())
+                  for m in re.finditer(rf"\b{re.escape(surname)}\b", folded_text)]
+    # A bare surname INSIDE a full-name hit is the same mention written once,
+    # not two. Dropping the contained span keeps it from escaping the
+    # assist-skip below, which looks at what precedes the START of a mention.
+    spans = sorted(set(spans))
+    return [(a, b) for a, b in spans
+            if not any(c <= a and b <= d and (c, d) != (a, b) for c, d in spans)]
 
 
 def _all_name_spans(name: str, folded: str) -> list[tuple[int, int]]:
@@ -66,7 +92,15 @@ def _all_name_spans(name: str, folded: str) -> list[tuple[int, int]]:
     if len(surname) >= 4:
         spans += [(m.start(), m.end())
                   for m in re.finditer(rf"\b{re.escape(surname)}\b", folded)]
-    return sorted(set(spans))
+    spans = sorted(set(spans))
+    # A bare surname sitting INSIDE a full-name hit is the same mention, and as
+    # a boundary it is redundant — the full name already bounds from further
+    # out. Keeping it broke the assist skip: "el pase de cabeza de Nico
+    # Williams" exempts the span starting at "Nico", but the contained span
+    # starting at "Williams" is not preceded by the cue, so it survived and
+    # clipped the scorer's clause anyway.
+    return [(a, b) for a, b in spans
+            if not any(c <= a and b <= d and (c, d) != (a, b) for c, d in spans)]
 
 
 def _named_players(match: Match) -> list[str]:
@@ -79,9 +113,66 @@ def _named_players(match: Match) -> list[str]:
                               + [c.player for c in match.cards]))
 
 
+# A name introduced by one of these cues is the PASSER, not the actor. It sits
+# inside the scorer's own clause ("recibe el pase filtrado de Grabara, define
+# de zurda"), so treating it as the next player's boundary truncated the clause
+# before the body part that proves the scorer was narrated correctly. Runs on
+# ACCENT-FOLDED text, so no accents appear in the patterns. Anchored with $
+# because it is matched against the 40 characters that PRECEDE the name.
+_ASSIST_CUE = re.compile(
+    r"(?:asistid[oa] por|habilitad[oa] por|alimentad[oa] por|servid[oa] por|"
+    r"(?:pase|centro|balon|asistencia|servicio|cruce|remate|saque|cabezazo|"
+    r"cabeza|testa|taconazo|galopada)"
+    r"(?: filtrado| preciso| largo)? de|recibe de|recibio de|tras el \w+ de|"
+    r"a pase de|de la mano de)\s*$")
+
+# Sentence terminators. A clause never runs past one, whoever is named next.
+_SENT_END = re.compile(r"[.!?\n]")
+
+# The ASSIST's body part is not the scorer's. "Petar Musa aprovecha el pase de
+# cabeza de Ivan Perisic y remata al centro de la red" describes a right-footed
+# finish after a headed pass, and the loose 'cabeza' in that window reported
+# Musa's goal as a header. Blanked from a window before either body-part
+# pattern runs, so it is evidence for nobody rather than evidence for the wrong
+# man — the same shape as the negated-penalty blanking further down.
+_ASSIST_BODY = re.compile(
+    r"\b(?:pase|centro|asistencia|servicio|balon|cruce|envio)\s+"
+    r"(?:de|con)\s+(?:la\s+)?(?:cabeza|testa|tacon|taconazo|zurda|derecha|"
+    r"izquierda|primera)")
+
+# Clause separators INSIDE a sentence. Used only to narrow the accusing side of
+# the body-part check: the window may open at the end of the PREVIOUS player's
+# name, which is exactly where their predicate starts, so "abrió el marcador
+# con un disparo de zurda, seguido de goles de Manu Morlanes" handed Morlanes
+# somebody else's left foot. Evidence that EXONERATES is still read from the
+# whole window; only a wrong-body-part accusation has to sit in the player's
+# own comma-delimited clause.
+_CLAUSE_SEP = re.compile(r"[,;:—–()]")
+
+
+def _own_clause(window: str, name_at: int) -> str:
+    """The comma-delimited clause of `window` containing offset `name_at`."""
+    before = [m.end() for m in _CLAUSE_SEP.finditer(window, 0, name_at)]
+    lo = before[-1] if before else 0
+    after = _CLAUSE_SEP.search(window, name_at)
+    return window[lo:after.start() if after else len(window)]
+
+
+def _is_assist_mention(folded: str, s: int) -> bool:
+    """True when the name starting at `s` is introduced as the PASSER."""
+    return bool(_ASSIST_CUE.search(folded[max(0, s - 40):s]))
+
+
 def _clause_window(folded: str, s: int, e: int,
                    others: list[tuple[int, int]], span: int = 90) -> str:
-    """The prose around one mention, stopping before the NEXT player's.
+    """The prose around one mention, as a string. See _clause_bounds."""
+    lo, hi = _clause_bounds(folded, s, e, others, span)
+    return folded[lo:hi]
+
+
+def _clause_bounds(folded: str, s: int, e: int,
+                   others: list[tuple[int, int]], span: int = 90) -> tuple:
+    """(lo, hi) of the prose around one mention, stopping before the NEXT player's.
 
     A flat +/-90 characters was reading straight through a comma into somebody
     else's action, and every false hold it produced looked identical to a real
@@ -99,11 +190,29 @@ def _clause_window(folded: str, s: int, e: int,
     """
     lo, hi = max(0, s - span), min(len(folded), e + span)
     for other_s, other_e in others:
+        # An ASSISTER is named INSIDE this player's own clause — "Kaminski,
+        # asistido por El Karouani, define de derecha". Clipping at that name
+        # cut the clause off before the body part that exonerates the scorer.
+        if _is_assist_mention(folded, other_s):
+            continue
         if other_e <= s:
             lo = max(lo, other_e)          # someone else, named before
         elif other_s >= e:
             hi = min(hi, other_s)          # someone else, named after
-    return folded[lo:hi]
+    # A sentence boundary bounds the clause even when nobody else is named in
+    # between. Clipping at the nearest OTHER PLAYER alone started the window at
+    # the end of that player's name, which is exactly where their own predicate
+    # begins: "Dembélé remató de cabeza ... En el 31, Ferran Torres recibió un
+    # centro de Dembélé, tocó de derecha" handed Ferran Torres a window opening
+    # on Dembélé's header and closing before his own "de derecha". That single
+    # leak produced 28 of the 333 false holds measured across the archive.
+    ends = [m.end() for m in _SENT_END.finditer(folded, lo, s)]
+    if ends:
+        lo = ends[-1]
+    nxt = _SENT_END.search(folded, e, hi)
+    if nxt:
+        hi = nxt.start()
+    return lo, hi
 
 
 # Words that signal each card colour in the narration (Spanish + English).
@@ -125,7 +234,22 @@ _CARD_WORDS = {
 # "La Roja" / "la Roja" — Spain's (and Chile's) nickname, NOT a red card.
 # Stripped from a window before the Red pattern runs so it can't masquerade as
 # colour evidence in either direction (false flag on Spain, or false pass).
-_TEAM_ROJA = re.compile(r"\bla roja\b", re.IGNORECASE)
+# "ve la roja" / "le muestra la roja" / "saca la roja" is the ordinary Spanish
+# way to say a player was SENT OFF — the nickname reading only applies to the
+# two national teams that own it. Stripping it unconditionally broke both
+# directions: a correctly-narrated red ("Themba Zwane ve la roja") lost its
+# only colour evidence and was reported as called yellow, and a YELLOW narrated
+# as "vio la roja" was silently let through.
+_TEAM_ROJA = re.compile(
+    r"(?<!\bve )(?<!\bvio )(?<!\bsaca )(?<!\bsaco )(?<!\bmuestra )"
+    r"(?<!\bmostro )(?<!\brecibe )(?<!\brecibio )(?<!\bcon )(?<!\bes )"
+    r"\bla roja\b(?! directa)", re.IGNORECASE)
+
+
+def _nickname_roja(match: Match) -> bool:
+    """True only for the sides whose nickname 'la Roja' actually is."""
+    teams = _fold(f"{match.home} {match.away}")
+    return any(t in teams for t in ("espana", "spain", "chile"))
 
 
 def _card_color_issues(match: Match, text: str) -> list[str]:
@@ -151,8 +275,10 @@ def _card_color_issues(match: Match, text: str) -> list[str]:
         saw_wrong_only = saw_right = False
         for s, e in _name_windows(player, folded):
             window = _clause_window(folded, s, e, others)
-            # Drop the team nickname so "la roja" is never red-card evidence.
-            window = _TEAM_ROJA.sub(" ", window)
+            # Drop the team nickname so "la roja" is never red-card evidence —
+            # but only where it IS the nickname. Everywhere else it is a card.
+            if _nickname_roja(match):
+                window = _TEAM_ROJA.sub(" ", window)
             if _CARD_WORDS[color].search(window):
                 saw_right = True
                 break
@@ -189,16 +315,24 @@ _BODY_WORDS = {
 # Penalty / own-goal vocabulary. These run on ACCENT-FOLDED text, so no
 # accents appear in the patterns ("pena maxima", "porteria"). "area penal" is
 # a PLACE on the pitch, not a penalty kick — excluded with a lookbehind.
-_PEN_WORDS = re.compile(r"\bpenalti|\bpenalty|(?<!area )\bpenal\b|"
-                        r"pena maxima|once metros|desde el punto",
+# The PLURAL matters: a description summarising a match writes "dos penales de
+# Raphinha", and \bpenal\b cannot match it (no boundary between 'l' and 'e').
+# That cut both ways — a correct description was held for "never says it was a
+# penalty", and a narration INVENTING "dos penales" in a match with none sailed
+# through the invention branch below. "desde el punto de vista" is ordinary
+# tactical prose, not the penalty spot, and would fire that same branch.
+_PEN_WORDS = re.compile(r"\bpenalti(?:s)?\b|\bpenalty|"
+                        r"(?<!area )(?<!areas )\bpenal(?:es)?\b|"
+                        r"pena maxima|once metros|desde el punto(?! de vista)",
                         re.IGNORECASE)
 # "propio gol" also describes an own goal — the narrator uses it freely, so it
 # must count or a genuine own-goal narration trips the guardrail. CAREFUL: a
 # bare "en su propia area/zona" is just a PLACE (a clearance happens there too),
 # so it is deliberately NOT matched — only own-goal-specific forms are, to avoid
 # the inverse false-positive ("mentions an own goal" where there was none).
-_OWN_WORDS = re.compile(r"autogol|propi[oa] (?:puerta|meta|porteria)|"
-                        r"\bel propio gol\b|en propia\b|en propias? mallas|"
+_OWN_WORDS = re.compile(r"autogol|propi[oa] (?:puerta|meta|porteria|red|arco|valla)|"
+                        r"\bel propio gol\b|\bgol propio\b|\btanto propio\b|"
+                        r"en propia\b|en propias? mallas|"
                         r"own goal|gol en contra", re.IGNORECASE)
 
 # A penalty mention that is NEGATED — the VAR/referee waved it away. "VAR
@@ -211,7 +345,7 @@ _OWN_WORDS = re.compile(r"autogol|propi[oa] (?:puerta|meta|porteria)|"
 # and left to the LLM-judge layer, to avoid masking a real penalty goal that
 # happens to be followed by an unrelated "no".
 _NEGATED_PEN = re.compile(
-    r"\b(?:no|sin)\b(?:\s+\w+){0,3}?\s+penal(?:ti|ty)?\b", re.IGNORECASE)
+    r"\b(?:no|sin)\b(?:\s+\w+){0,3}?\s+penal(?:es|ti|tis|ty)?\b", re.IGNORECASE)
 
 
 def _goal_kind(description: str) -> str | None:
@@ -256,11 +390,29 @@ def _goal_detail_issues(match: Match, text: str) -> list[str]:
                   for sp in _all_name_spans(other, folded)]
         saw_wrong_only = saw_right = False
         for s, e in _name_windows(g.player, folded):
-            window = _clause_window(folded, s, e, others)
+            # This scorer appears here as somebody ELSE's assister — "Chidera
+            # Ejuke recibe el pase de Isaac Romero y envía con la derecha".
+            # The body part in that clause is Ejuke's, not Romero's, and
+            # reading it flagged Romero's left-footed goal as right-footed.
+            if _is_assist_mention(folded, s):
+                continue
+            lo, hi = _clause_bounds(folded, s, e, others)
+            window = folded[lo:hi]
+            # Evidence that EXONERATES is read from the whole window, and with
+            # the assist phrase left in: a wider look can only make a correct
+            # video pass, which is the safe direction here.
             if _BODY_WORDS[kind].search(window):
                 saw_right = True
                 break
-            if any(_BODY_WORDS[k].search(window) for k in wrong_kinds):
+            # ACCUSE only on the player's own comma-delimited clause, with the
+            # assist's body part blanked out. The window can open at the end of
+            # the PREVIOUS player's name — exactly where their predicate begins
+            # — so "abrió el marcador con un disparo de zurda, seguido de goles
+            # de Manu Morlanes" handed Morlanes somebody else's left foot; and
+            # "el pase de cabeza de Perisic" is the passer's head, not Musa's.
+            narrow = _ASSIST_BODY.sub(
+                " ", _own_clause(window, min(max(s - lo, 0), len(window))))
+            if any(_BODY_WORDS[k].search(narrow) for k in wrong_kinds):
                 saw_wrong_only = True
         if saw_wrong_only and not saw_right:
             human = {"right": "right foot", "left": "left foot",
@@ -270,7 +422,8 @@ def _goal_detail_issues(match: Match, text: str) -> list[str]:
     return issues
 
 
-def _goal_type_issues(match: Match, text: str) -> list[str]:
+def _goal_type_issues(match: Match, text: str, *,
+                      summary: bool = False) -> list[str]:
     """Penalties and own goals must be narrated AS penalties and own goals —
     and never invented where there were none.
 
@@ -299,6 +452,14 @@ def _goal_type_issues(match: Match, text: str) -> list[str]:
         issues.append("the text mentions a penalty but no goal was a penalty")
     if not has_own and _OWN_WORDS.search(folded):
         issues.append("the text mentions an own goal but none was scored")
+    # A title and a description are a ~300-character summary, not a play-by-play,
+    # and demanding that one label EVERY penalty and own goal is a completeness
+    # test — the very test the judge prompt already disavows for narration. A
+    # description reading "Harry Kane abrió el marcador con un potente disparo
+    # de derecha" is factually true and was held for what it left out. The
+    # INVENTION rules above still run on metadata; only the omission rule stops.
+    if summary:
+        return issues
     for g in match.goals:
         is_pen = "Pen" in (g.kind or "")
         is_own = "Own" in (g.kind or "")
@@ -315,12 +476,6 @@ def _goal_type_issues(match: Match, text: str) -> list[str]:
             issues.append(f"{g.player}'s goal was an OWN GOAL but the text "
                           "never says so")
     return issues
-
-
-def _strip_accents(s: str) -> str:
-    import unicodedata
-    return "".join(ch for ch in unicodedata.normalize("NFD", s)
-                   if not unicodedata.combining(ch))
 
 
 def _edit_distance(a: str, b: str, cap: int = 3) -> int:
@@ -364,11 +519,19 @@ def _name_spelling_issues(match: Match, text: str) -> list[str]:
                 fact_tokens.add(_fold(tok))
     if not fact_tokens:
         return []
+    # Everything ELSE the data names — venue, competition, card reasons, goal
+    # prose — is not a scorer, but it is material the model was handed, so a
+    # word appearing verbatim in it cannot be a hallucinated misspelling.
+    # Without this, Elche's Estadio Martínez VALERO was reported as a typo of
+    # the player Germán Valera, and ARNAUT Danjuma, named in a card reason, as
+    # a typo of Arnau Martínez.
+    known = _fact_name_tokens(match)
     issues = []
     seen = set()
     for word in re.findall(r"\b[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]{4,}\b", text):
         cand = _fold(word)
-        if cand in fact_tokens or cand in seen or cand in _NOT_A_TYPO:
+        if (cand in fact_tokens or cand in seen or cand in _NOT_A_TYPO
+                or cand in known):
             continue                              # exact name / common word
         close = [ft for ft in fact_tokens
                  if cand[:2] == ft[:2] and _edit_distance(cand, ft, 1) <= 1]
@@ -387,7 +550,42 @@ _KNOWN_PROPER = {
     "laliga", "liga", "champions", "europa", "conference", "eurocopa",
     "supercopa", "copa", "rey", "mundial", "espana", "uefa", "fifa",
     "primera", "segunda", "division", "hypermotion", "naciones", "jornada", "var",
+    "mundo", "libertadores", "sudamericana", "catalunya", "cataluna", "tercera",
+    "cuarta", "catalana", "amistoso", "amistosos",
+    # Club nicknames and supporter names. Everyday Spanish football prose, and
+    # not a person in any of them — "la Bianconera dominó con un 48% de
+    # posesión" held a correct Juventus recap off the channel.
+    "cule", "cules", "merengue", "merengues", "colchonero", "colchoneros",
+    "rojiblanco", "rojiblancos", "blaugrana", "blanquiazul", "periquito",
+    "periquitos", "verdiblanco", "verdiblancos", "txuri", "urdin", "leones",
+    "bianconera", "bianconeri", "nerazzurri", "rossoneri", "giallorossi",
+    "citizens", "gunners", "reds", "blues", "devils", "albiceleste", "bafana",
+    "atlas", "roja", "samba", "sardineros", "canarios", "granotas", "azulones",
+    # Spanish exonyms. The feed names countries in English ("Switzerland",
+    # "Scotland") while the narration is Spanish, so every correctly-translated
+    # country name looked like an invention.
+    "alemania", "francia", "inglaterra", "escocia", "gales", "irlanda",
+    "suiza", "belgica", "holanda", "paises", "bajos", "italia", "portugal",
+    "grecia", "turquia", "rusia", "polonia", "chequia", "croacia", "serbia",
+    "suecia", "noruega", "dinamarca", "finlandia", "islandia", "austria",
+    "hungria", "rumania", "ucrania", "marruecos", "argelia", "tunez", "egipto",
+    "senegal", "camerun", "nigeria", "ghana", "japon", "corea", "china",
+    "arabia", "saudi", "iran", "australia", "brasil", "argentina", "uruguay",
+    "colombia", "mexico", "estados", "unidos", "canada", "nueva", "zelanda",
+    "sudafrica", "costa", "marfil", "cabo", "verde", "irak", "catar",
+    "curazao", "jordania", "republica", "checa", "chequia", "sur", "norte",
+    "emiratos", "arabes", "cote", "ivoire", "escandinavia", "oriente",
 }
+
+# Roles that introduce a PERSON by surname alone. Anchored with $ because it is
+# matched against the words that PRECEDE the candidate: without it, requiring a
+# capitalised neighbour would let "el equipo dirigido por Ancelotti" through —
+# the exact invention this whole check was written to catch.
+_PERSON_CUE = re.compile(
+    r"\b(?:entrenador|entrenadora|tecnico|técnico|dt|mister|míster|"
+    r"dirigid[oa]s?\s+por|estratega|seleccionador|banquillo\s+de|"
+    r"al\s+mando\s+de|arbitro|árbitro|colegiado|presidente)\s*$",
+    re.IGNORECASE)
 
 
 def _fact_name_tokens(match: Match) -> set:
@@ -442,10 +640,38 @@ def _invented_name_issues(match: Match, text: str) -> list[str]:
     issues, seen = [], set()
     # Split on sentence boundaries and drop each sentence's opening word, whose
     # capital says nothing about whether it is a name.
-    for sentence in re.split(r"(?<=[.!?\n])\s+", text):
+    # The split must survive a title/description JOIN. Both callers build
+    # f"{title}\n{description}", and a title never ends in a terminator, so the
+    # old `(?<=[.!?\n])\s+` — which needs whitespace AFTER the newline — saw the
+    # pair as ONE sentence and exempted only the title's first word. The
+    # description's opening capital was then read as a name: 'Una', 'Después',
+    # 'Los', 'Luis'. Splitting on newlines in their own right fixes it.
+    # A colon, a pipe or a dash separates the two halves of a YouTube title
+    # ("Villarreal 5-1 Atlético Madrid: Dominio total en la Cerámica"), and the
+    # word after it is capitalised by that convention. It also sits next to the
+    # end of a team name, so the capitalised-neighbour rule below reads it as a
+    # surname: 'Dominio', 'Empate', 'Fuerte' were all held on exactly this.
+    for sentence in re.split(r"(?<=[.!?…”»\"])\s+|\n+|\s*[:|]\s*|\s+[—–-]\s+",
+                             text):
         words = re.findall(r"\b[^\W\d_]+\b", sentence, re.UNICODE)
-        for word in words[1:]:
-            if not re.fullmatch(r"[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]{2,}", word):
+        shaped = [bool(re.fullmatch(r"[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]{2,}", w))
+                  for w in words]
+        for i, word in enumerate(words):
+            if i == 0 or not shaped[i]:
+                continue
+            # A person is named with TWO capitalised tokens — the case this
+            # check exists for ("Carlo Ancelotti") is one. A lone capitalised
+            # word mid-sentence is almost always a club nickname, a demonym or
+            # a Spanish exonym: 'Bianconera', 'Albiceleste', 'Suiza', 'Escocia'
+            # — the last two because ESPN names countries in English while the
+            # narration is written in Spanish. That single shape accounted for
+            # most of the invented-name holds in the archive.
+            nbr = ((shaped[i - 1] and i - 1 > 0)
+                   or (i + 1 < len(words) and shaped[i + 1]))
+            # ...but a coach IS routinely named by surname alone ("dirigido por
+            # Ancelotti"), which is precisely the hole the neighbour rule would
+            # open. A person cue immediately before the word re-closes it.
+            if not nbr and not _PERSON_CUE.search(" ".join(words[max(0, i - 4):i])):
                 continue
             cand = _fold(word)
             if cand in allowed or cand in seen or cand in _KNOWN_PROPER:
@@ -733,14 +959,19 @@ def _wrong_latin_language(text: str, language: str) -> str:
 
 
 def facts_check(match: Match, text: str, language: str = "es", *,
-                ordered_score: bool = True) -> dict:
+                ordered_score: bool = True, summary: bool = False) -> dict:
     """Cheap, deterministic verification against the raw match data.
 
     `ordered_score`: when True (a play-by-play narration), the LAST score-shaped
     token must be the final. Set False for YouTube title+description, where the
     title carries the final FIRST and the description may recount a running
     score ('se adelantó 1-0') last — there the 'last token = final' rule would
-    false-fail. The 'final must appear at least once' rule still applies."""
+    false-fail. The 'final must appear at least once' rule still applies.
+
+    `summary`: set alongside it for the same title+description. A summary is
+    not a transcript, so it is not required to LABEL every penalty and own
+    goal; it is still forbidden to invent one, to miscolour a card, to name the
+    wrong body part or to state a wrong score."""
     issues = []
 
     # Language first: the parameter was accepted here and never used, so a
@@ -799,9 +1030,17 @@ def facts_check(match: Match, text: str, language: str = "es", *,
         #    numbers are both too large to be a scoreline (>9) before deciding —
         #    otherwise a legitimate range after the score would false-fail.
         elif ordered_score:
+            # A SHOOTOUT score lands last by construction: the facts block
+            # orders the narrator to state it, so "Final: 1-1 ... y Egipto se
+            # impuso 4-2 en los penaltis" ends on (2,4) and every future
+            # shootout would be held for "the last score stated is not the
+            # final". The two in the archive escaped only by luck.
+            allowed = {target}
+            if match.home_pens is not None and match.away_pens is not None:
+                allowed.add(tuple(sorted((match.home_pens, match.away_pens))))
             scorelike = [(pair, written) for _, pair, written in pairs
                          if all(x <= 9 for x in pair)]
-            if scorelike and scorelike[-1][0] != target:
+            if scorelike and scorelike[-1][0] not in allowed:
                 issues.append(f"the last score stated ({scorelike[-1][1]}) "
                               f"is not the final {final_str}")
 
@@ -810,14 +1049,21 @@ def facts_check(match: Match, text: str, language: str = "es", *,
     # as yellow, a right-footed goal described as 'de zurda', 'César Montaes'.
     issues += _card_color_issues(match, norm)
     issues += _goal_detail_issues(match, norm)
-    issues += _goal_type_issues(match, norm)
+    issues += _goal_type_issues(match, norm, summary=summary)
     issues += _name_spelling_issues(match, text)
     issues += _invented_name_issues(match, text)
-    if (language or "es").startswith("es"):
+    # _base_lang, not a raw startswith: a profile configured as "spanish" or
+    # "castellano" is Spanish everywhere else in this file and was silently
+    # losing the grammar check here alone.
+    if _base_lang(language) == "es":
         issues += _grammar_issues(norm)
 
     # Free-prose invention beyond these (a player neither scoring nor carded,
     # invented causes) is left to the LLM-judge layer below.
+    # One issue per DISTINCT problem: _goal_type_issues appends per goal, so a
+    # player who scored two penalties produced the identical sentence twice in
+    # the held-back report a human has to read.
+    issues = list(dict.fromkeys(issues))
     return {"ok": not issues, "issues": issues}
 
 
@@ -843,6 +1089,16 @@ _JUDGE_SYS = (
     "actually asserts. Mark grounded=false only when it states something the "
     "facts contradict or never mention. Never mark it false for being "
     "incomplete, condensed, or for omitting cards, goals or statistics.\n"
+    # The lower-tier sources report a FINAL SCORE and nothing else. The facts
+    # block says so in words, and a judge that reads "no event detail" as "the
+    # match finished 0-0" then marks a perfectly correct 4-0 recap ungrounded
+    # for stating the very score the facts state at the top. A judge verdict is
+    # frozen into the record forever, so this misreading costs the video
+    # permanently.
+    "Some matches come from a source that reports ONLY the final score. When "
+    "the facts say no goal-scorer, minute or card detail is available, that is "
+    "MISSING DATA and NOT a 0-0: judge the narration against the Final score "
+    "line, and never mark it ungrounded for stating a score the facts state.\n"
     "Respond as JSON only: "
     '{"grounded": bool, "language_ok": bool, "tone_ok": bool, "reason": str}.'
 )

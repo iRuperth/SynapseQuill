@@ -305,8 +305,22 @@ def _facts_block(match: Match) -> str:
         lines.append("Match events in chronological order (narrate ALL of them, in this order):")
         for _, line in events:
             lines.append(f"  - {line}")
-    else:
+    elif not (match.home_goals or match.away_goals):
         lines.append("No goals or cards (0-0).")
+    else:
+        # A scoreline WITHOUT any event detail is missing data, not a goalless
+        # draw. The lower-tier sources (the Rōnin community site) carry only the
+        # final score for every match they report, so this branch is their
+        # normal case rather than an edge one. Saying "no goals" here flatly
+        # contradicts the Final score line three rows above, and the LLM judge
+        # reads that contradiction as the NARRATION's fault: a correct 4-0
+        # recap was held back as "not grounded" because the facts it was judged
+        # against claimed the match finished 0-0.
+        lines.append("No goal-scorer, minute or card detail is available from "
+                     "the data source for this match — the final score above is "
+                     "the whole of what is known. Narrate the result and the "
+                     "shape of the game; do NOT invent scorers, minutes, "
+                     "chances, saves, woodwork or cards.")
 
     # Players remaining after red cards — stated as a FACT so the narrator never
     # has to do the arithmetic itself (it was saying "10 hombres" after TWO
