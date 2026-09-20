@@ -46,6 +46,33 @@ def _audio_seconds(audio_path) -> float:
         clip.close()
 
 
+def _keep_published_url(out, record: dict) -> None:
+    """Carry a previously-published YouTube URL onto a re-rendered record.
+
+    The record is rewritten wholesale on every run, so re-generating a match
+    that is already on the channel used to drop its youtube_url — and the
+    uploader decides what is unpublished by exactly that field. The result is a
+    SECOND public upload of a game the channel already carries, which no gate
+    can catch afterwards: the two videos have different ids and nothing ties
+    them together.
+
+    Re-rendering does not un-publish anything. The YouTube API has no "replace
+    the file" call either, so the honest reading of a re-render is "a newer
+    local rendition of a match that is already up", and the URL is a fact about
+    the channel that a local render has no business erasing.
+    """
+    if record.get("youtube_url") or not out.exists():
+        return
+    try:
+        previous = json.loads(out.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    if previous.get("youtube_url"):
+        record["youtube_url"] = previous["youtube_url"]
+        record["youtube_privacy"] = previous.get("youtube_privacy")
+        record["re_rendered_after_publishing"] = True
+
+
 def _noop_step(step: str, msg: str) -> None:
     print(f"[pipeline] {step}: {msg}")
 
@@ -315,6 +342,7 @@ def run_match(profile_id: str, match: Match, *,
     # --- 5. Persist content record -----------------------------------
     record = {**result, "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     out = cfg.CONTENT_DIR / f"match_{match.fixture_id}.json"
+    _keep_published_url(out, record)
     out.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     result["status"] = "done"
     result["record_path"] = str(out)
@@ -418,6 +446,7 @@ def run_topic_video(profile_id: str, topic: str, *,
     # --- 5. Persist content record -----------------------------------
     record = {**result, "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     out = cfg.CONTENT_DIR / f"{stem}.json"
+    _keep_published_url(out, record)
     out.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     result["status"] = "done"
     result["record_path"] = str(out)
