@@ -51,6 +51,61 @@ def _name_windows(name: str, folded_text: str) -> list[tuple[int, int]]:
             for m in re.finditer(rf"\b{re.escape(surname)}\b", folded_text)]
 
 
+def _all_name_spans(name: str, folded: str) -> list[tuple[int, int]]:
+    """Every span where `name` is mentioned, full name AND bare surname.
+
+    _name_windows deliberately stops at the full name when it finds one — for
+    deciding whether a player was mentioned, the full name is the better
+    evidence. This is the other question: where does someone ELSE's sentence
+    start. A description that writes "Zaid Romero" once and "Romero" twice more
+    is still talking about Romero at every one of them, and a boundary scan that
+    only knew the first would let a neighbour's clause leak in.
+    """
+    spans = list(_name_windows(name, folded))
+    surname = _fold(name).split()[-1]
+    if len(surname) >= 4:
+        spans += [(m.start(), m.end())
+                  for m in re.finditer(rf"\b{re.escape(surname)}\b", folded)]
+    return sorted(set(spans))
+
+
+def _named_players(match: Match) -> list[str]:
+    """Every player the match data names — scorers and carded players alike.
+
+    These are the clause boundaries: whichever of them the prose turns to next
+    is where the player being checked stops being the subject.
+    """
+    return list(dict.fromkeys([g.player for g in match.goals]
+                              + [c.player for c in match.cards]))
+
+
+def _clause_window(folded: str, s: int, e: int,
+                   others: list[tuple[int, int]], span: int = 90) -> str:
+    """The prose around one mention, stopping before the NEXT player's.
+
+    A flat +/-90 characters was reading straight through a comma into somebody
+    else's action, and every false hold it produced looked identical to a real
+    one. "Johan Mojica, Zaid Romero y Ramon Terrats recibieron amarillos ...,
+    mientras que Romero fue expulsado" reported Terrats as called red, on the
+    strength of a sending-off the same sentence attributes to Romero by name;
+    "Satriano ... con un disparo de derecho, pero Carl Starfelt igualo con un
+    cabezazo" reported Satriano as headed.
+
+    Clipping at the nearest other player NARROWS the evidence, which is the
+    safe direction for a check that holds finished videos back: the cost is
+    that a genuine error stated at arm's length from the name is left to the
+    LLM judge, and the gain is that a correct description is not refused on the
+    strength of a sentence about somebody else.
+    """
+    lo, hi = max(0, s - span), min(len(folded), e + span)
+    for other_s, other_e in others:
+        if other_e <= s:
+            lo = max(lo, other_e)          # someone else, named before
+        elif other_s >= e:
+            hi = min(hi, other_s)          # someone else, named after
+    return folded[lo:hi]
+
+
 # Words that signal each card colour in the narration (Spanish + English).
 # "amonest·ó/ado/ación" + "booked/caution" imply yellow; "expuls·ado/ión" /
 # "sent off" / "roja" imply red. Deliberately NO bare "red" (matches Spanish
@@ -58,7 +113,11 @@ def _name_windows(name: str, folded_text: str) -> list[tuple[int, int]]:
 # guard against "la roja" (Spain's nickname) — handled in _card_color_issues,
 # not here, because the nickname only matters next to a Spain player's name.
 _CARD_WORDS = {
-    "Yellow": re.compile(r"\bamarilla|yellow|\bamonest|\bbooked\b|\bbooking\b|"
+    # \bamarill, not \bamarilla: a description that books three players at once
+    # writes "recibieron amarillos", and the feminine-only pattern read that as
+    # no yellow evidence at all — so the card fell through to the Red branch and
+    # a correctly-described booking was reported as called red.
+    "Yellow": re.compile(r"\bamarill|yellow|\bamonest|\bbooked\b|\bbooking\b|"
                          r"\bcaution", re.IGNORECASE),
     "Red": re.compile(r"\broja\b|\brojas\b|red card|\bexpuls|sent off",
                       re.IGNORECASE),
@@ -87,9 +146,11 @@ def _card_color_issues(match: Match, text: str) -> list[str]:
             continue
         color = next(iter(colors))
         wrong = "Red" if color == "Yellow" else "Yellow"
+        others = [sp for other in _named_players(match) if other != player
+                  for sp in _all_name_spans(other, folded)]
         saw_wrong_only = saw_right = False
         for s, e in _name_windows(player, folded):
-            window = folded[max(0, s - 90): e + 90]
+            window = _clause_window(folded, s, e, others)
             # Drop the team nickname so "la roja" is never red-card evidence.
             window = _TEAM_ROJA.sub(" ", window)
             if _CARD_WORDS[color].search(window):
@@ -111,11 +172,15 @@ def _card_color_issues(match: Match, text: str) -> list[str]:
 # look-up, and "despeje de cabeza", a clearance) — only header-specific forms
 # count. Note: patterns run on ACCENT-FOLDED text, so no accents in them.
 _BODY_WORDS = {
+    # "de derech[ao]" / "de izquierd[ao]": Spanish says BOTH "de derecha" and
+    # "un disparo de derecho" for the same right-footed shot, and only the
+    # feminine was listed — so a description that got the foot right was read as
+    # describing no foot at all, and then as the wrong body part.
     "right": re.compile(r"\bderechazo|\bdiestra\b|pierna derecha|"
-                        r"con (?:la|su) derecha|de derecha\b(?! a izquierda)",
+                        r"con (?:la|su) derecha|de derech[ao]\b(?! a izquierda)",
                         re.IGNORECASE),
     "left": re.compile(r"\bzurd|pierna izquierda|"
-                       r"con (?:la|su) izquierda|de izquierda\b(?! a derecha)",
+                       r"con (?:la|su) izquierda|de izquierd[ao]\b(?! a derecha)",
                        re.IGNORECASE),
     "header": re.compile(r"de cabeza\b|cabezazo|\bcabece|\btestarazo\b|"
                          r"\bfrentazo\b|header", re.IGNORECASE),
@@ -185,9 +250,13 @@ def _goal_detail_issues(match: Match, text: str) -> list[str]:
         if len(kinds_by_player.get(g.player, set())) != 1:
             continue                              # mixed-finish brace — skip
         wrong_kinds = [k for k in _BODY_WORDS if k != kind]
+        # Everyone else the match data names bounds how far this scorer's
+        # prose can reach.
+        others = [sp for other in _named_players(match) if other != g.player
+                  for sp in _all_name_spans(other, folded)]
         saw_wrong_only = saw_right = False
         for s, e in _name_windows(g.player, folded):
-            window = folded[max(0, s - 90): e + 90]
+            window = _clause_window(folded, s, e, others)
             if _BODY_WORDS[kind].search(window):
                 saw_right = True
                 break
@@ -460,6 +529,78 @@ def _digitise_scores(text: str) -> str:
     return _SCORE_PAIR_RE.sub(one, text)
 
 
+# Words that sit INSIDE a club's name in running prose without identifying it.
+# Only words of 4+ characters ever become team tokens, so this list just has to
+# cover the connectors and legal-form words a narrator writes between the parts
+# of a name ("Racing DE Santander", "EL Alaves").
+# Deliberately NOT here: "Sociedad", "Deportivo", "Sporting". They look generic
+# but they are the only distinctive word in Real Sociedad, Deportivo and
+# Sporting de Gijon — filtering them leaves those clubs with no token at all.
+_TEAM_FILLER = frozenset({
+    "de", "del", "la", "el", "los", "las", "y", "e",
+    "club", "futbol", "football",
+    "fc", "cf", "cd", "ud", "sd", "rc", "rcd", "ca", "sad",
+})
+
+
+def _team_anchored_scores(match: Match, folded: str) -> list[tuple[int, tuple, str]]:
+    """(position, sorted pair, as-written) for a score with the TEAM NAMES
+    BETWEEN the digits: "Racing de Santander 2, Alaves 1".
+
+    The adjacent-token regex cannot see this form — it needs the two numbers on
+    either side of ONE separator, and here a whole club name is in the way. That
+    is not an exotic phrasing, it is how a Spanish commentator reads a full-time
+    score aloud, and it held a correct Racing 2-1 Alaves recap off the channel:
+    the deterministic check reported the final score was "not clearly stated"
+    while the LLM judge, reading the very same sentence, called it grounded.
+
+    Anchoring each number to a REAL team name is what keeps this from becoming
+    dangerous. Pairing bare digits a few words apart would manufacture scores
+    out of minutes and percentages ("al 62 ... un 57 por ciento") and turn a
+    false failure into a false PASS, which is the far worse direction here.
+    """
+    def tokens(name: str) -> set[str]:
+        return {t for t in re.findall(r"[a-z0-9]+", _fold(name))
+                if len(t) >= 4 and t not in _TEAM_FILLER}
+
+    home_t, away_t = tokens(match.home), tokens(match.away)
+    # A token the two sides SHARE identifies neither of them (Real Madrid vs
+    # Real Sociedad, Athletic vs Atletico), so it anchors nothing.
+    shared = home_t & away_t
+    home_t, away_t = home_t - shared, away_t - shared
+    if not home_t or not away_t:
+        return []
+
+    anchored = []                      # (position, side, number)
+    for m in re.finditer(r"\b(\d{1,2})\b", folded):
+        # Walk backwards over the words immediately before the number, stepping
+        # through the filler a club name carries, and stop at the first word
+        # that belongs to neither name.
+        side = None
+        for w in reversed(re.findall(r"[a-z0-9]+",
+                                     folded[max(0, m.start() - 40):m.start()])):
+            if w in home_t or w in away_t:
+                this = "home" if w in home_t else "away"
+                if side and this != side:
+                    side = None        # both clubs in one run — ambiguous
+                    break
+                side = this
+            elif w in _TEAM_FILLER:
+                continue
+            else:
+                break
+        if side:
+            anchored.append((m.start(), side, int(m.group(1))))
+
+    # Two anchored numbers in a row, one per side and close enough together to
+    # be one scoreline rather than two sentences that each mention a club.
+    pairs = []
+    for (p1, s1, n1), (p2, s2, n2) in zip(anchored, anchored[1:], strict=False):
+        if s1 != s2 and p2 - p1 <= 60:
+            pairs.append((p2, tuple(sorted((n1, n2))), f"{n1}-{n2}"))
+    return pairs
+
+
 # ── Language enforcement ─────────────────────────────────────────────
 # A Chinese description was once published under a Spanish title: the fallback
 # chain reached qwen, a Chinese-trained model, and nothing checked the language
@@ -630,12 +771,27 @@ def facts_check(match: Match, text: str, language: str = "es", *,
     if h is not None and a is not None and (h or a):
         sep = r"\s*(?:[-:x]|\s(?:a|to)\s)\s*"
         score_re = re.compile(rf"\b(\d{{1,2}}){sep}(\d{{1,2}})\b")
-        target = frozenset((h, a))             # order-agnostic final score
-        pairs = [frozenset((int(m1), int(m2))) for m1, m2 in score_re.findall(norm)]
-        final_str = "-".join(str(x) for x in sorted((h, a)))
+        # A sorted PAIR, not a set: order-agnostic either way, but a set
+        # collapses a draw to a single element and then reports a 1-1 as
+        # 'the last score stated (1)', which reads like a bug to the human the
+        # hold is asking to review it.
+        target = tuple(sorted((h, a)))         # order-agnostic final score
+        # Both scans run over the SAME folded text so their positions are
+        # comparable: "2-1" and "Racing 2, Alaves 1" are the same statement
+        # written two ways and have to be ordered against each other.
+        folded = _fold(norm)
+        # Each hit carries how it was WRITTEN as well as the order-agnostic
+        # pair, so the message a human reads quotes the text back to them
+        # ("the last score stated (0-1)") instead of a re-sorted version of it.
+        found = [(m.start(), tuple(sorted((int(m.group(1)), int(m.group(2))))),
+                  f"{m.group(1)}-{m.group(2)}")
+                 for m in score_re.finditer(folded)]
+        found += _team_anchored_scores(match, folded)
+        pairs = sorted(found, key=lambda t: t[0])
+        final_str = f"{h}-{a}"                 # as it was actually played
 
         # 1) The correct final must appear at least once.
-        if target not in pairs:
+        if target not in [pair for _, pair, _w in pairs]:
             issues.append(f"final score {h}-{a} not clearly stated")
         # 2) The LAST score-shaped token that equals a PLAUSIBLE football score
         #    must be the final. Football prose freely contains minute ranges
@@ -643,10 +799,11 @@ def facts_check(match: Match, text: str, language: str = "es", *,
         #    numbers are both too large to be a scoreline (>9) before deciding —
         #    otherwise a legitimate range after the score would false-fail.
         elif ordered_score:
-            scorelike = [p for p in pairs if all(x <= 9 for x in p)]
-            if scorelike and scorelike[-1] != target:
-                stated = "-".join(str(x) for x in sorted(scorelike[-1]))
-                issues.append(f"the last score stated ({stated}) is not the final {final_str}")
+            scorelike = [(pair, written) for _, pair, written in pairs
+                         if all(x <= 9 for x in pair)]
+            if scorelike and scorelike[-1][0] != target:
+                issues.append(f"the last score stated ({scorelike[-1][1]}) "
+                              f"is not the final {final_str}")
 
     # Everything the data states exactly IS checked exactly. Each of these
     # caught (or would have caught) a real shipped mistake: a red card narrated
