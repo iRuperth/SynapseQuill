@@ -108,9 +108,40 @@ def upload_content(cfg: BrandProfile, content_id: str) -> dict:
     return {"ok": True, "youtube_url": url, "privacy": privacy}
 
 
-def pending_uploads(cfg: BrandProfile) -> list[str]:
-    """Content ids that have a video but are NOT yet on YouTube."""
-    out = []
+def hold_reasons(record: dict) -> list[str]:
+    """Why a rendered video is not eligible for automatic publishing.
+
+    An empty list means nothing is holding it back. Returning the REASONS
+    rather than a bool is the whole point: a gate that only says "no" is
+    indistinguishable from having nothing to do, which is exactly how four
+    finished matches — one of them a 0-5 Barcelona win at Mestalla — sat on
+    disk for days while the uploader reported "every generated video is
+    already published" once a minute.
+    """
+    reasons = []
+    if record.get("upload_skipped"):
+        reasons.append("held back at generation (upload_skipped)")
+    guard = record.get("guardrail") or {}
+    if guard and not guard.get("passed", True):
+        issues = (guard.get("facts") or {}).get("issues") or []
+        judge = guard.get("judge") or {}
+        ungrounded = bool(judge) and not judge.get("grounded", True)
+        if issues:
+            reasons.append("facts — " + "; ".join(issues))
+        if ungrounded:
+            reasons.append("judge — " + (judge.get("reason") or "not grounded"))
+        if not issues and not ungrounded:
+            reasons.append("narration guardrail did not pass")
+    meta_guard = record.get("metadata_guardrail") or {}
+    if meta_guard and not meta_guard.get("ok", True):
+        issues = meta_guard.get("issues") or []
+        reasons.append("metadata — " + ("; ".join(issues) if issues
+                                        else "guardrail did not pass"))
+    return reasons
+
+
+def _unpublished(cfg: BrandProfile):
+    """(content_id, record) for every rendered video with no YouTube URL yet."""
     for f in sorted(cfg.CONTENT_DIR.glob("*.json")):
         if not _valid_id(f.stem) or not _video_path(cfg, f.stem).exists():
             continue
@@ -120,17 +151,117 @@ def pending_uploads(cfg: BrandProfile) -> list[str]:
             continue
         if rec.get("youtube_url"):
             continue
-        # Never queue what a gate deliberately held back. Without this the
-        # uploader publishes exactly the records the guardrail refused to
-        # auto-publish, quietly undoing the decision that kept them back.
-        if rec.get("upload_skipped"):
+        yield f.stem, rec
+
+
+def pending_uploads(cfg: BrandProfile) -> list[str]:
+    """Content ids that have a video, are NOT on YouTube, and no gate holds back.
+
+    Never queue what a gate deliberately held back: publishing exactly the
+    records the guardrail refused would quietly undo the decision that kept
+    them back. What the gate holds is reported by blocked_uploads().
+    """
+    return [cid for cid, rec in _unpublished(cfg) if not hold_reasons(rec)]
+
+
+def blocked_uploads(cfg: BrandProfile) -> list[tuple[str, list[str]]]:
+    """(content_id, reasons) for rendered videos a gate is holding back.
+
+    These are NOT failures to retry — a human decides whether the narration is
+    wrong or the guardrail is over-eager, then either fixes the record or
+    publishes it deliberately. They must simply never be silent again.
+    """
+    return [(cid, reasons) for cid, rec in _unpublished(cfg)
+            if (reasons := hold_reasons(rec))]
+
+
+def revalidate(cfg: BrandProfile, content_id: str, record: dict) -> dict | None:
+    """Re-run the DETERMINISTIC gates against today's code and today's data.
+
+    A verdict is a SNAPSHOT, and the gate reads it forever. Whatever the
+    guardrail believed at the moment of generation is frozen into the record,
+    so a video held by a check that was later fixed stays held for good — the
+    guardrail improves, and the video it wrongly refused never learns about it.
+    Three real videos were stuck exactly there: a Racing 2-1 Alaves recap whose
+    score check could not read "Racing de Santander 2, Alaves 1", a Dortmund tie
+    whose narration DOES call the penalty a penalty, and a Getafe description
+    that correctly says "amarillos" and "de derecho" while its frozen verdict
+    insists it says red and the wrong foot.
+
+    Only the deterministic layer is re-run, and only in the direction of the
+    facts:
+
+      · The LLM judge's verdict is left exactly as it was. Re-running it costs a
+        call and could flip on model drift alone, so 'not grounded' stands until
+        a human moves it — an opinion is not something to re-roll until it
+        agrees.
+      · upload_skipped is never touched. That is a decision taken at generation
+        time, not a check with a right answer.
+      · If the fixture cannot be fetched, NOTHING changes and the hold stands.
+        Failing closed is the only safe direction here: releasing a video
+        because the data that would contradict it is missing is precisely how a
+        wrong match reaches the channel.
+
+    Returns the updated record, or None when nothing changed.
+    """
+    if not content_id.startswith("match_") or record.get("upload_skipped"):
+        return None                 # a digest carries many matches, not one
+    narration = record.get("narration") or ""
+    if not narration:
+        return None
+    try:
+        from pipeline.data_sources import get_data_source
+        match = get_data_source(cfg).fixture(content_id.removeprefix("match_"))
+    except Exception:               # noqa: BLE001 — unreachable source, keep holding
+        return None
+    if match is None or match.home_goals is None or match.away_goals is None:
+        return None
+
+    import copy
+
+    from agents.guardrail import facts_check
+
+    updated = copy.deepcopy(record)
+    guard = updated.setdefault("guardrail", {})
+    guard["facts"] = facts_check(match, narration, cfg.LANGUAGE)
+    # The judge keeps its say: a narration it called ungrounded stays held even
+    # when every deterministic check now passes.
+    guard["passed"] = (guard["facts"]["ok"]
+                       and (guard.get("judge") or {}).get("grounded", True))
+
+    meta = updated.get("metadata") or {}
+    if meta.get("title") or meta.get("description"):
+        # ordered_score=False: a title carries the final FIRST and the
+        # description may recount a running score last, so the narration's
+        # "last token is the final" rule would false-fail here.
+        updated["metadata_guardrail"] = facts_check(
+            match, f"{meta.get('title', '')}\n{meta.get('description', '')}",
+            cfg.LANGUAGE, ordered_score=False)
+
+    updated["revalidated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    return updated if hold_reasons(updated) != hold_reasons(record) else None
+
+
+def revalidate_held(cfg: BrandProfile) -> list[tuple[str, list[str], list[str]]]:
+    """Re-check everything a gate is holding, and persist any verdict that moved.
+
+    Runs over the HELD set only — a handful of records — so the cost is a few
+    cached fixture lookups, not a pass over the whole back catalogue.
+
+    Returns (content_id, reasons_before, reasons_after) for each record whose
+    verdict changed; an empty `reasons_after` means the video is now free to be
+    published on the next pass.
+    """
+    moved = []
+    for cid, reasons in blocked_uploads(cfg):
+        updated = revalidate(cfg, cid, json.loads(
+            _record_path(cfg, cid).read_text(encoding="utf-8")))
+        if updated is None:
             continue
-        if rec.get("guardrail") and not rec["guardrail"].get("passed", True):
-            continue
-        if rec.get("metadata_guardrail") and not rec["metadata_guardrail"].get("ok", True):
-            continue
-        out.append(f.stem)
-    return out
+        _record_path(cfg, cid).write_text(
+            json.dumps(updated, indent=2, ensure_ascii=False), encoding="utf-8")
+        moved.append((cid, reasons, hold_reasons(updated)))
+    return moved
 
 
 # ── Scheduled-upload queue (JSON-backed, one file per profile) ───────

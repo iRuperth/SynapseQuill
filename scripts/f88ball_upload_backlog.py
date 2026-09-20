@@ -22,6 +22,7 @@ Why this exists rather than a loop around upload_content():
 import argparse
 import fcntl
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -32,8 +33,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from core.brand_config import BrandProfile          # noqa: E402
-from pipeline.upload_manager import pending_uploads, upload_content  # noqa: E402
+from core.brand_config import BrandProfile  # noqa: E402
+from pipeline.upload_manager import (  # noqa: E402
+    blocked_uploads,
+    pending_uploads,
+    revalidate_held,
+    upload_content,
+)
 
 # Gap between uploads. Not a quota measure — the quota is a daily budget, not a
 # rate — but YouTube treats a burst of identical-looking uploads from one channel
@@ -146,6 +152,75 @@ def _is_quota_error(exc: Exception) -> bool:
             or "ratelimitexceeded" in text)
 
 
+def _notify(title: str, message: str) -> None:
+    """Best-effort macOS notification. Never lets the uploader fail over UI.
+
+    The log alone was not enough: this job writes a line a minute forever, so a
+    hold recorded there is indistinguishable from the noise around it. A held
+    video is a decision waiting on a human, and it needs to reach one.
+    """
+    try:
+        subprocess.run(
+            ["osascript", "-e",
+             f'display notification {json.dumps(message)} with title {json.dumps(title)}'],
+            check=False, capture_output=True, timeout=10)
+    except Exception:  # noqa: BLE001 — a missing/renamed osascript is not fatal
+        pass
+
+
+def _report_held(cfg: BrandProfile, blocked: list, announce: bool) -> None:
+    """Print what a gate is holding, in full the FIRST time each item appears.
+
+    Printing the full block on every pass would bury it: at a pass a minute,
+    four held videos is fourteen thousand lines a day and the log becomes the
+    same wall of noise that hid the problem. So the detail (and the
+    notification) fire when the held SET changes, and every other pass gets one
+    line — enough to see the hold is still there while scrolling.
+    """
+    seen_path = cfg.OUTPUT_DIR / ".held_reported.json"
+    try:
+        seen = set(json.loads(seen_path.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, OSError):
+        seen = set()
+    current = {cid for cid, _ in blocked}
+    fresh = current - seen
+
+    if not current:
+        # Everything held has since been released. Forget them, or the state
+        # file keeps ids that can never come back — a released video carries a
+        # youtube_url and is excluded from the unpublished set for good — and
+        # the record of what has already been announced drifts from reality.
+        if seen and announce:
+            try:
+                seen_path.unlink()
+            except OSError:
+                pass
+        return
+
+    if fresh or not announce:
+        print(f"[upload] {len(blocked)} rendered video(s) HELD BACK by a gate — "
+              f"not published, awaiting review:")
+        for cid, reasons in blocked:
+            print(f"   {'!' if cid in fresh else ' '} {cid}")
+            for reason in reasons:
+                print(f"       {reason}")
+        print("[upload] review, then publish with: uv run python "
+              "scripts/f88ball_upload_backlog.py --publish-held <id>")
+    else:
+        print(f"[upload] {len(blocked)} video(s) still held back "
+              f"({', '.join(sorted(current))}) — awaiting review")
+
+    if fresh and announce:
+        _notify("F88tball — video sin publicar",
+                f"{len(fresh)} vídeo(s) retenidos por el guardrail: "
+                f"{', '.join(sorted(fresh))}")
+    if announce and current != seen:
+        try:
+            seen_path.write_text(json.dumps(sorted(current)), encoding="utf-8")
+        except OSError:
+            pass          # losing the state only costs a repeated report
+
+
 def _acquire_lock(cfg: BrandProfile):
     """Take an exclusive per-profile lock, or return None if a run is already up.
 
@@ -179,6 +254,9 @@ def main() -> int:
                     help="stop after this many uploads (0 = until quota runs out)")
     ap.add_argument("--dry-run", action="store_true",
                     help="print the publishing order and exit, uploading nothing")
+    ap.add_argument("--publish-held", nargs="+", metavar="ID", default=None,
+                    help="publish these held-back ids after a human reviewed "
+                         "them (bypasses the guardrail gate for those ids ONLY)")
     args = ap.parse_args()
 
     cfg = BrandProfile(args.profile)
@@ -193,11 +271,64 @@ def main() -> int:
     cfg.PRACTICE_MODE = False
     cfg.YOUTUBE_PRIVACY = args.privacy
 
+    # An explicit, human-reviewed override. Deliberately a SEPARATE mode rather
+    # than a flag that relaxes the gate for everything: the guardrail's decision
+    # stands for the queue, and releasing a video is a per-id act that names the
+    # id out loud. It still refuses to touch anything the gate is not holding,
+    # so a typo cannot quietly publish an unrelated match.
+    if args.publish_held:
+        held = dict(blocked_uploads(cfg))
+        done = 0
+        for cid in args.publish_held:
+            if cid not in held:
+                print(f"[upload] {cid} is not held back — nothing to release")
+                continue
+            print(f"[upload] releasing {cid} (was held: {'; '.join(held[cid])})",
+                  flush=True)
+            try:
+                res = upload_content(cfg, cid)
+                done += 1
+                print(f"[upload] OK {cid} -> {res['youtube_url']} ({res['privacy']})",
+                      flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[upload] FAILED {cid}: {e}", flush=True)
+                continue
+            if cid != args.publish_held[-1]:
+                time.sleep(_GAP_SECONDS)
+        print(f"[upload] released {done} held video(s)")
+        return 0
+
+    # Re-check the held set against TODAY's guardrail and today's match data
+    # before deciding anything. A verdict is written once and read forever, so
+    # without this a video refused by a check that has since been fixed stays
+    # refused for good — which is how a correct Racing 2-1 Alaves recap sat
+    # rendered on disk while the fix for the check that refused it was already
+    # in the tree. Cheap: it walks the handful of records a gate is holding.
+    for cid, before, after in revalidate_held(cfg):
+        if after:
+            print(f"[upload] re-checked {cid} — still held: {'; '.join(after)}")
+        else:
+            print(f"[upload] re-checked {cid} — the hold no longer applies "
+                  f"(was: {'; '.join(before)}); queued for publishing")
+
     pending = pending_uploads(cfg)
+    # Report what a gate is holding back BEFORE deciding there is nothing to do.
+    # A held video is finished, sitting on disk, and invisible: the run used to
+    # print "every generated video is already published" while four rendered
+    # matches waited behind a guardrail, so the only signal that anything was
+    # wrong was a viewer noticing a match had never appeared on the channel.
+    # Called even when nothing is held, so the "already announced" state is
+    # cleared once the last hold is released. A dry run is a human asking on
+    # purpose: it always shows the full detail, and never consumes that state.
+    blocked = blocked_uploads(cfg)
+    _report_held(cfg, blocked, announce=not args.dry_run)
+
     dates = _match_dates(cfg, pending)
     todo = sorted(pending, key=lambda c: _sort_key(cfg, c, dates))
     if not todo:
-        print("[upload] nothing pending — every generated video is already published")
+        print("[upload] nothing pending"
+              + (f" — {len(blocked)} held back (above)" if blocked
+                 else " — every generated video is already published"))
         return 0
 
     print(f"[upload] {len(todo)} pending, publishing as '{args.privacy}', oldest first:")
