@@ -316,11 +316,20 @@ def _facts_block(match: Match) -> str:
         # reads that contradiction as the NARRATION's fault: a correct 4-0
         # recap was held back as "not grounded" because the facts it was judged
         # against claimed the match finished 0-0.
+        # The list has to name STATISTICS too. Told only to avoid inventing
+        # events, the model reached for numbers instead and wrote possession
+        # percentages and shot counts for a match whose feed carries nothing but
+        # the score — the judge caught a Rōnin 3-0 on exactly that, alongside a
+        # minute-12 shot that grazed the post and a save that never happened.
+        # A number invented about a real match is a claim, not colour.
         lines.append("No goal-scorer, minute or card detail is available from "
                      "the data source for this match — the final score above is "
                      "the whole of what is known. Narrate the result and the "
-                     "shape of the game; do NOT invent scorers, minutes, "
-                     "chances, saves, woodwork or cards.")
+                     "shape of the game in general terms; do NOT invent "
+                     "scorers, minutes, specific incidents, chances, saves, "
+                     "woodwork, cards, substitutions, NOR ANY STATISTIC — no "
+                     "possession percentage, no shot or corner count, no "
+                     "figure of any kind that is not printed above.")
 
     # Players remaining after red cards — stated as a FACT so the narrator never
     # has to do the arithmetic itself (it was saying "10 hombres" after TWO
