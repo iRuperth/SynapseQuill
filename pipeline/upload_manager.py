@@ -137,6 +137,22 @@ def hold_reasons(record: dict) -> list[str]:
         issues = meta_guard.get("issues") or []
         reasons.append("metadata — " + ("; ".join(issues) if issues
                                         else "guardrail did not pass"))
+    # A DIGEST is gated here and nowhere else. digest.py records every segment
+    # whose narration failed the guardrail three times and then bakes it into
+    # the reel anyway — deliberately, because one bad segment out of twelve is
+    # not a reason to lose the whole recap — and it holds the upload back with
+    # `skip_auto`. That gate is dead: it needs cfg.AUTO_UPLOAD, which is False
+    # on this channel precisely because publishing moved out to the uploader
+    # process, so it can never fire and nothing set upload_skipped. Fourteen
+    # digests reached the public channel carrying between one and four segments
+    # the guardrail had rejected, and the only trace was a WARNING in a log
+    # nobody reads. The reel is still kept, exactly as before — it is one
+    # segment away from publishable, and a human decides whether to fix the
+    # narration or release it as it stands.
+    failed = record.get("failed_segments") or []
+    if failed:
+        reasons.append(f"{len(failed)} digest segment(s) failed the guardrail "
+                       f"and were baked in — " + "; ".join(failed))
     return reasons
 
 

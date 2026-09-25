@@ -413,6 +413,14 @@ def run_daily_digest(profile_id: str, day: str, video_format: str = "reel", *,
     # GATE: an AUTO upload (upload is None -> AUTO_UPLOAD) is skipped when any
     # segment failed its guardrail; an explicit upload=True (a human asked) is
     # honoured. The video and record are kept either way for manual review.
+    #
+    # This gate only covers the INLINE upload below, and on this channel that
+    # upload never happens: AUTO_UPLOAD is False because publishing belongs to
+    # the separate uploader process. So skip_auto cannot fire here and never
+    # set upload_skipped — the real gate for a digest is hold_reasons() in
+    # upload_manager.py, which reads `failed_segments` from the record written
+    # just above. Keep that field populated, or a digest carrying a rejected
+    # segment publishes itself with nothing in the way.
     auto = upload is None
     skip_auto = auto and cfg.AUTO_UPLOAD and failed_segments
     if skip_auto:
