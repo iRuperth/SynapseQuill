@@ -43,7 +43,14 @@ _RAW_DISPATCH = {
 #     making Groq primary silently left the pipeline with no fallback whatever.
 #     A chain has no such blind spot: a step is skipped only when it is the
 #     exact provider+model that just failed.
-_DEFAULT_CHAIN = "groq:openai/gpt-oss-120b,groq:qwen/qwen3.6-27b,deepseek,cerebras"
+# CAREFUL: a step naming a model its provider no longer serves is not a slower
+# fallback, it is a guaranteed 404 that costs a round-trip on every single call.
+# Groq moved this Qwen from 3.6 to 3.8 and retired the old id, and the chain went
+# on asking for 3.6 — 762 wasted requests in one scheduler log, more than the
+# rate-limit errors the chain exists to survive. Verify an id against the
+# provider's own /v1/models listing before putting it here; Together did exactly
+# the same thing with FLUX.1-schnell.
+_DEFAULT_CHAIN = "groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,deepseek,cerebras"
 
 # Credentials a provider needs before a chain step is worth attempting. Ollama
 # is local and needs none.
