@@ -168,6 +168,34 @@ def _backoff(interval: int, failures: int) -> float:
     return min(interval * (2 ** failures), _MAX_BACKOFF)
 
 
+# How far back the FIRST pass after a start looks for matches nobody covered.
+# poll_finished sees yesterday and today, which is right for a process that
+# never stops — but this one stops for every reboot, every crash and every
+# closed laptop lid, and a match that finished inside that gap falls out of the
+# two-day window before anything can look at it again. Espanyol 1-3 Elche, kicked
+# off 19:00Z on 18 September, is exactly that: the machine went down at 22:24
+# that night and came back on the 20th, by which point the window was asking for
+# the 19th and the 20th, so the match never got a reel — it survives only as a
+# segment inside its round's digest, and nothing anywhere said so.
+#
+# A week is the span that matters: it covers a weekend outage plus the midweek
+# round either side of it, and the sweep is nearly free because `processed` is
+# seeded from the records on disk, so a normal restart finds nothing to do and
+# generates nothing at all.
+_CATCHUP_DAYS = 7
+
+
+def _poll_days(catchup: bool) -> list:
+    """Days to poll on one pass. [None] lets the source use its own default of
+    yesterday AND today; the catch-up pass names each day explicitly instead."""
+    if not catchup:
+        return [None]
+    from datetime import date, timedelta
+    today = date.today()
+    return [(today - timedelta(days=i)).isoformat()
+            for i in range(_CATCHUP_DAYS, -1, -1)]
+
+
 def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
     """Poll the data source and generate a video as each match finishes. When a
     whole matchday wraps up, build (and upload) its digest recap too."""
@@ -185,21 +213,33 @@ def cmd_scheduler(cfg: BrandProfile, interval: int, upload: bool):
     print(f"[scheduler] watching {source.name} fixtures every {interval}s "
           f"(profile '{cfg.id}'). Ctrl+C to stop.")
     failures = 0
+    # The first pass sweeps the last week, so a match that finished while this
+    # process was down still gets its reel. Cleared only after a pass completes
+    # without raising, so an outage that is still going when we start does not
+    # burn the one chance to catch up.
+    catchup = True
     while True:
         try:
-            for match in source.poll_finished(processed):
-                # A match can belong in the channel without deserving a video of
-                # its own — a first-round cup tie between two clubs nobody knows
-                # is covered by its round's recap and nothing else. Mark it
-                # processed anyway, or every pass would reconsider it forever.
-                if not source.wants_own_video(match):
-                    print(f"[scheduler] {match.scoreline} — round-up only, no reel")
-                    processed.add(match.fixture_id)
-                    continue
-                print(f"[scheduler] finished: {match.scoreline} — generating...")
-                run_match(cfg.id, match, do_video=True, do_upload=upload)
+            if catchup:
+                print(f"[scheduler] catching up on the last {_CATCHUP_DAYS} days "
+                      f"in case anything finished while this was down...")
+            for day in _poll_days(catchup):
+                for match in source.poll_finished(processed, day):
+                    # A match can belong in the channel without deserving a video
+                    # of its own — a first-round cup tie between two clubs nobody
+                    # knows is covered by its round's recap and nothing else. Mark
+                    # it processed anyway, or every pass would reconsider it
+                    # forever.
+                    if not source.wants_own_video(match):
+                        print(f"[scheduler] {match.scoreline} — round-up only, no reel")
+                        processed.add(match.fixture_id)
+                        continue
+                    where = f" [catch-up {day}]" if day else ""
+                    print(f"[scheduler] finished: {match.scoreline}{where} — generating...")
+                    run_match(cfg.id, match, do_video=True, do_upload=upload)
             _maybe_run_digest(cfg, source, upload)
             failures = 0
+            catchup = False
         except Exception as e:  # noqa: BLE001
             failures += 1
             print(f"[scheduler] error ({failures} in a row): {e}")
