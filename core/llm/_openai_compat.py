@@ -42,6 +42,9 @@ def chat_completion(*, url: str, key_var: str, model: str, messages: list,
     # A provider that rejects one of our optional knobs (reasoning_effort and
     # friends differ per model family) should cost one retry, not the call.
     drop_extra = False
+    # Keys that answered 401/402 on this call. A dead key is dead for the whole
+    # call, so one lap of the keyring is the whole of what is worth trying.
+    dead_keys: set = set()
     attempt = -1
     while attempt + 1 < attempts:
         attempt += 1
@@ -74,6 +77,27 @@ def chat_completion(*, url: str, key_var: str, model: str, messages: list,
                 print(f"[{label}] {key_var} rate-limited, rotating key "
                       f"{(_idx[key_var] % len(keys)) + 1}/{len(keys)}")
             continue
+        # A DEAD key, not a busy one. 402 is "this account must pay" and 401 is
+        # "this key is not valid" — both are facts about THIS key alone, and the
+        # next one may be perfectly good, so they deserve the same rotation a
+        # 429 gets. Without this the first dead key ended the call and every key
+        # behind it was never tried: five Cerebras keys sat in .env while the
+        # chain gave up on the first one. Deliberately no sleep and no second
+        # pass, unlike the 429 path — waiting cannot add credit to an account or
+        # make an invalid key valid, so one lap of the keyring is the whole of
+        # what is worth trying. When the lap finds nothing, the error falls
+        # through below and the caller's fallback chain takes over.
+        if resp.status_code in (401, 402) and len(keys) > 1:
+            dead_keys.add(key)
+            if len(dead_keys) < len(keys):
+                _idx[key_var] += 1
+                print(f"[{label}] {key_var} returned {resp.status_code} "
+                      f"(dead key), trying "
+                      f"{(_idx[key_var] % len(keys)) + 1}/{len(keys)}")
+                attempts += 1    # a fresh key deserves a real attempt
+                continue
+            print(f"[{label}] all {len(keys)} {key_var} keys returned "
+                  f"{resp.status_code} — handing over to the fallback chain")
         # Some models reject an optional knob outright ("`reasoning_effort` is
         # not supported with this model"). Retry once plain before giving up, so
         # adding a model to the chain never needs a code change here.
